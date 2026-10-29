@@ -40,7 +40,7 @@
 </p>
 
 <p align="center">
-  <strong>Need more control? Try <a href="https://github.com/champdev-me/routengine">RoutEngine</a>, the upgraded commercial version of net-merge.</strong><br>
+  <strong>Need more control? Try <a href="https://routengine.net/?utm_source=net-merge&utm_medium=readme">RoutEngine</a>, the upgraded commercial version of net-merge.</strong><br>
   Choose the connection for each app, add a fallback, and set a speed limit or data cap per app. Windows, macOS and Linux. Free for personal use, Pro for work.
 </p>
 
@@ -98,7 +98,7 @@ net-merge updates with the rest of your system. To start it at sign-in, tick *St
 
 **Android**: see [Android](#android) below.
 
-> **Want to choose the connection for each app?** [RoutEngine](https://github.com/champdev-me/routengine) is the
+> **Want to choose the connection for each app?** [RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=readme-callout) is the
 > upgraded commercial version of net-merge, for Windows, macOS and Linux. Pick an adapter per app, add a fallback, and set a speed
 > limit or data cap per app. Free for personal use, Pro for work.
 
@@ -522,6 +522,9 @@ More flags and details are in [docs/DEVELOPING.md](docs/DEVELOPING.md).
 ## Support
 
 net-merge is free. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/rohit267) or [donate with PayPal](https://paypal.me/champdev). Thank you!
+
+Want to choose the connection for each app? Try [RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=readme-support),
+also by me: pick an adapter per app, add a fallback, and set a speed limit or data cap per app. Free for personal use.
 
 Building a college project? Host it on [DormHost](https://dormhost.dev/?utm_source=net-merge&utm_medium=readme-support),
 also by me: Node.js, Python or Docker with a database, 30 days free.
