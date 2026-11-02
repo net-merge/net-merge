@@ -192,8 +192,15 @@ new (beta).
 
 It needs Android 8.0 or newer.
 
-- **Faster:** apps that open many connections at once, like Play Store updates, web pages, torrents, cloud
-  backups and download managers. One single download stays on one network, like on a computer.
+- **Faster:** apps that open many connections at once, like web pages, torrents, cloud backups and download
+  managers (ADM with several parts).
+
+**Limitations**
+
+- **One connection stays on one network.** A Play Store download, a single browser download and one video
+  mostly use one connection, so they don't get faster. We measured a 1 GB Play Store download: all of it went
+  over one connection. Splitting one connection over two networks needs a server in the middle, and net-merge
+  doesn't use one.
 - **Mobile data stays on** while net-merge runs, so keep an eye on your data plan.
 - **One VPN at a time:** Android lets only one VPN app run, so net-merge can't run next to another VPN.
 - **Problems?** [Open an issue](https://github.com/net-merge/net-merge/issues/new/choose) and pick *Android*.
