@@ -523,8 +523,18 @@ More flags and details are in [docs/DEVELOPING.md](docs/DEVELOPING.md).
 
 net-merge is free. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/rohit267) or [donate with PayPal](https://paypal.me/champdev). Thank you!
 
-Want to choose the connection for each app? Try [RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=readme-support),
-also by me: pick an adapter per app, add a fallback, and set a speed limit or data cap per app. Free for personal use.
-
 Building a college project? Host it on [DormHost](https://dormhost.dev/?utm_source=net-merge&utm_medium=readme-support),
 also by me: Node.js, Python or Docker with a database, 30 days free.
+
+## Want to choose the connection for each app?
+
+[RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=readme-end) is the upgraded version of net-merge, by the same developer. Run Steam over both connections, your browser over Ethernet with Wi-Fi as a backup, and another app over Wi-Fi alone. Set a speed limit or a data cap per app. For Windows, macOS and Linux. Free for personal use, Pro for work.
+
+<a href="https://routengine.net/?utm_source=net-merge&utm_medium=readme-screenshot">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/routengine-overview.png">
+    <img src="docs/routengine-overview-light.png" width="100%" alt="RoutEngine with WiFi and Ethernet online and three apps, each routed its own way: Steam over both, Brave over Ethernet with a WiFi backup and a data cap, curl over WiFi">
+  </picture>
+</a>
+
+**[Get RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=readme-end)**
