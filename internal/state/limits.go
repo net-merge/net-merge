@@ -69,5 +69,5 @@ func SaveLimits(dir string, limits map[string]float64) error {
 	if err := os.WriteFile(tmp, append(b, '\n'), 0o644); err != nil {
 		return err
 	}
-	return os.Rename(tmp, LimitsPath(dir))
+	return replaceFile(tmp, LimitsPath(dir))
 }

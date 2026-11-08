@@ -5,6 +5,10 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Fixed
+- **`net-merge limit` on Windows no longer fails now and then with "Access is denied".** The running
+  instance could not save the new cap while the command was reading the saved caps to see it applied.
+
 ## [0.3.6] - 2026-10-28
 
 ### Added
