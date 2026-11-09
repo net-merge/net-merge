@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestLimitsRoundTrip(t *testing.T) {
@@ -75,5 +76,30 @@ func TestLimitsSurviveARebootOnMacOS(t *testing.T) {
 	}
 	if got, want := LimitsPath(macStateDir), filepath.Join(limitsDir(macStateDir), "limits.json"); got != want {
 		t.Errorf("LimitsPath(%q) = %q, want %q", macStateDir, got, want)
+	}
+}
+
+// `net-merge limit` reads limits.json every 50 ms while it waits for the running instance to save
+// the new cap. On Windows a rename over a file someone has open fails ("Access is denied"), so a
+// save that lands during one of those reads has to wait for it instead of failing.
+func TestSaveLimitsWhileTheFileIsOpen(t *testing.T) {
+	dir := t.TempDir()
+	if err := SaveLimits(dir, map[string]float64{"Wi-Fi": 5}); err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.Open(LimitsPath(dir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	time.AfterFunc(100*time.Millisecond, func() { f.Close() })
+	if err := SaveLimits(dir, map[string]float64{"Wi-Fi": 10}); err != nil {
+		t.Fatalf("SaveLimits while a reader has the file open: %v", err)
+	}
+	got, err := LoadLimits(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got["Wi-Fi"] != 10 {
+		t.Fatalf("got %v, want the new cap saved", got)
 	}
 }
