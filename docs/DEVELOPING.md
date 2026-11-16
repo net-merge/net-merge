@@ -19,7 +19,9 @@ net-merge version
 
 Flags for `tray`/`run`/`socks`: `-include "WiFi,Ethernet"` (only these adapters), `-weight "Name=3"`
 (fixed weight instead of measured), `-ipv6 auto|on|off`, `-mtu 9000` (virtual adapter MTU, see below),
-`-pprof 127.0.0.1:6060` (Go profiler, loopback only), `-log file`.
+`-pprof 127.0.0.1:6060` (Go profiler, loopback only), `-log file`, `-phone-saver=false` (use a phone
+hotspot like any other link), `-phone-cool 20` (Mbit/s a phone is held to after long heavy use, 0 = never),
+`-phone "Name"` (treat this adapter as a phone hotspot too).
 
 ## How it works
 
@@ -67,6 +69,20 @@ The app's connection ends inside the userland stack. net-merge then opens a seco
   reset the affected family's estimate. Static weights retain least-open-flows scheduling;
   scheduling respects health filtering, cooldowns and retry exclusions. Existing flows
   stay pinned to their original adapter; no background speed tests are used.
+- Phone saver (`-phone-saver`, tray checkbox, `internal/engine/phone.go`): a phone sharing its mobile
+  data has no fan, and the scheduler would otherwise give it a share of every flow and run it flat out
+  for a whole download. An iPhone hotspot is recognised by its address (Personal Hotspot always uses
+  `172.20.10.0/28`) or its description (`iPhone USB`, `Apple Mobile Device Ethernet`, `ipheth`); `-phone`
+  adds others. For those links:
+  new flows skip the phone while the other links carry fewer than 3 busy flows and less than 1 Mbit/s
+  (after that it is scheduled as usual, so parallel downloads split exactly as before); after 3 minutes
+  above the cool rate the link is capped at `-phone-cool` until the load has been below it for a while
+  (each second of rest pays back half a second of work, and the cap goes when half is paid back); a
+  healthy phone is probed every 2 minutes instead of every 15 s, not at all while traffic arrives over
+  it, and at once after a connect timeout; and idle upstream sockets on it use a 2-minute TCP keep-alive
+  instead of 30 s. Cost: the phone's contribution to a long download drops to the cool rate, and a flow
+  that opened alone never moves to the phone later. The phone cannot report its temperature, so all of
+  this limits load rather than measuring heat.
 - IPv6 (`-ipv6 auto|on|off`, tray checkbox): IPv6 flows can only leave through adapters that have IPv6, and
   apps that prefer IPv6 (browsers, OBS, curl) would funnel everything onto them. In `auto` mode IPv6 is
   balanced only when every adapter has working IPv6; otherwise new IPv6 connections are refused at the SYN

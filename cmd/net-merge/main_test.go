@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"net-merge/internal/engine"
+	"net-merge/internal/nics"
 	"net-merge/internal/state"
 )
 
@@ -96,5 +97,22 @@ func TestFormatNICsShowsTheCapInMbit(t *testing.T) {
 	}
 	if strings.Contains(out, "MB/s") {
 		t.Fatalf("status must not mix megabytes into a Mbit/s line:\n%s", out)
+	}
+}
+
+func TestMarkPhonesAddsNamedAdapters(t *testing.T) {
+	found := []nics.Nic{{Name: "Wi-Fi"}, {Name: "Ethernet 5"}, {Name: "en7", Phone: true}}
+	markPhones(found, splitNames(" ethernet 5 ,nothing"))
+	if found[0].Phone || !found[1].Phone || !found[2].Phone {
+		t.Fatalf("want only Ethernet 5 added to the phones, got %+v", found)
+	}
+}
+
+func TestFormatNICsShowsACoolingPhone(t *testing.T) {
+	out := formatNICs([]engine.SlotStats{{
+		Name: "en7", State: "up", State6: "-", Present: true, Phone: true, CoolMbps: 20, Weight: 1, Weight6: 1,
+	}})
+	if !strings.Contains(out, "phone  cooling at 20 Mbit/s") {
+		t.Fatalf("want the phone mark and the cool rate, got:\n%s", out)
 	}
 }

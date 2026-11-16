@@ -52,6 +52,7 @@ type trayUI struct {
 	limitPreset [trayRows][]*systray.MenuItem
 
 	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
+	saverItem                                        *systray.MenuItem
 	versionItem                                      *systray.MenuItem
 	rows                                             []*systray.MenuItem
 	lastOn                                           *bool
@@ -96,6 +97,7 @@ func (u *trayUI) onReady() {
 	systray.AddSeparator()
 	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
 	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.saverItem = systray.AddMenuItemCheckbox("Go easy on phone hotspots", "Keeps a phone that shares its mobile data from getting hot: small things stay on your other connections, and after 3 minutes of heavy use the phone is slowed down until it has had a rest. Untick to always use its full speed.", u.sched.PhoneSaver())
 	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
 	u.toggleItem = systray.AddMenuItem("Start merging", "")
 	u.versionItem = systray.AddMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
@@ -148,6 +150,13 @@ func (u *trayUI) onReady() {
 					u.v6Item.Check()
 					u.bal.SetV6Mode(engine.V6Auto)
 				}
+			case <-u.saverItem.ClickedCh:
+				if u.saverItem.Checked() {
+					u.saverItem.Uncheck()
+				} else {
+					u.saverItem.Check()
+				}
+				u.sched.SetPhoneSaver(u.saverItem.Checked())
 			case <-u.versionItem.ClickedCh:
 				if err := platform.OpenURL(update.ReleasesURL); err != nil {
 					logx.Printf("error: opening the release page: %v\n", err)
@@ -291,6 +300,9 @@ func (u *trayUI) refresh() {
 			txt += "  limit " + limitText(s.LimitMbps)
 		}
 		if on {
+			if s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
+				txt += "  cooling at " + limitText(s.CoolMbps)
+			}
 			txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
 		}
 		if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet

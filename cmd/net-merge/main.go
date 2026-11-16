@@ -38,6 +38,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge version
 
 Flags for run/socks: -include "WiFi,Ethernet 3"  -weight "Name=3"  -auto-weight=false  -stats 5s
+Phone hotspots: -phone-saver=false (use a phone like any other link)  -phone-cool 20  -phone "Name"
 `
 
 type weightFlags map[string]float64
@@ -67,6 +68,9 @@ type common struct {
 	ipv6     string
 	mtu      int
 	pprof    string
+	phones   string
+	saver    bool
+	cool     float64
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -78,19 +82,38 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.BoolVar(&c.auto, "auto-weight", true, "weight adapters by measured throughput (off when -weight is given)")
 	fs.StringVar(&c.ipv6, "ipv6", "auto", "auto: IPv6 only if every adapter has it (else apps use IPv4 on all adapters); on: always; off: never")
 	fs.IntVar(&c.mtu, "mtu", tun.DefaultMTU, "MTU of the virtual adapter (1280-65535); larger means fewer packets and less CPU")
+	fs.BoolVar(&c.saver, "phone-saver", true, "go easy on phone hotspots so the phone stays cool: light traffic stays off them and long heavy use is held to -phone-cool")
+	fs.Float64Var(&c.cool, "phone-cool", engine.DefaultCoolMbps, "Mbit/s a phone hotspot is held to after 3 minutes of heavy use, until it has had a rest (0 = never held back)")
+	fs.StringVar(&c.phones, "phone", "", "comma-separated adapters to treat as phone hotspots, besides the iPhones net-merge recognises by itself")
 	fs.StringVar(&c.pprof, "pprof", "", "serve Go's profiler on this loopback address, e.g. 127.0.0.1:6060")
 	fs.StringVar(&c.logFile, "log", "", "write output to this file instead of the console")
 	fs.StringVar(&c.stateDir, "state-dir", state.DefaultDir(), "where status/off marker files live")
 }
 
 func (c *common) nicsDetailed() ([]nics.Nic, []nics.Skip, error) {
-	var inc []string
-	for _, s := range strings.Split(c.include, ",") {
+	found, skipped, err := nics.DiscoverNicsDetailed(splitNames(c.include), c.weights)
+	markPhones(found, splitNames(c.phones))
+	return found, skipped, err
+}
+
+func splitNames(list string) (names []string) {
+	for _, s := range strings.Split(list, ",") {
 		if s = strings.TrimSpace(s); s != "" {
-			inc = append(inc, s)
+			names = append(names, s)
 		}
 	}
-	return nics.DiscoverNicsDetailed(inc, c.weights)
+	return names
+}
+
+// markPhones adds the adapters named with -phone to the phones net-merge found by itself.
+func markPhones(found []nics.Nic, phones []string) {
+	for i := range found {
+		for _, name := range phones {
+			if strings.EqualFold(name, found[i].Name) {
+				found[i].Phone = true
+			}
+		}
+	}
 }
 
 func (c *common) nics() ([]nics.Nic, error) {
@@ -133,8 +156,13 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	if len(nics) == 0 {
 		return nil, nil, fmt.Errorf("no usable IPv4 adapters found (try: net-merge list)")
 	}
+	if c.cool < 0 || c.cool > engine.LimitMaxMbps {
+		return nil, nil, fmt.Errorf("-phone-cool must be between 0 and %.0f Mbit/s, got %v", float64(engine.LimitMaxMbps), c.cool)
+	}
 	sched := engine.NewScheduler(nics)
 	sched.SetAuto(c.auto && len(c.weights) == 0)
+	sched.SetPhoneSaver(c.saver)
+	sched.SetCoolRate(c.cool)
 	if limits, err := state.LoadLimits(c.stateDir); err != nil {
 		logx.Printf("warning: %v (ignored)\n", err) // a bad limits file must not stop merging
 	} else {
@@ -193,6 +221,9 @@ func describeNic(n nics.Nic) string {
 	if n.IP6 != nil {
 		s += "  v6 " + n.IP6.String()
 	}
+	if n.Phone {
+		s += "  (phone hotspot)"
+	}
 	return s
 }
 
@@ -208,6 +239,12 @@ func formatNICs(snap []engine.SlotStats) string {
 		lim := ""
 		if s.LimitMbps > 0 {
 			lim = "  limit " + limitPhrase(s.LimitMbps)
+		}
+		if s.Phone {
+			lim += "  phone"
+		}
+		if s.CoolMbps > 0 {
+			lim += "  cooling at " + limitPhrase(s.CoolMbps)
 		}
 		fmt.Fprintf(&sb, "%-14s v4 %-11s v6 %-11s link down %6.1f up %5.1f Mbit/s  via net-merge %6.1f  active %3d  total %5d  w %.2f/%.2f  failed %d%s%s\n",
 			s.Name, s.State, s.State6, s.LinkIn*8/1e6, s.LinkOut*8/1e6, (s.RateIn+s.RateOut)*8/1e6, s.Active, s.Total, s.Weight, s.Weight6, s.Failed, lim, gone)

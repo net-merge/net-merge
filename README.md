@@ -64,6 +64,8 @@ spread over all your links.
 - **Smart:** faster links get more connections. A link with no internet gets none until it works again.
 - **Safe:** if net-merge crashes, your internet keeps working.
 - **Light:** about 0.18 CPU cores per 100 Mbit/s.
+- **Easy on your phone:** an iPhone hotspot is left alone while your other connections have room, and
+  gets a rest after long heavy use, so it does not run hot. See [Use it](#use-it).
 
 ## Install
 
@@ -331,7 +333,8 @@ macOS cannot use Android USB tethering by itself. The app **TetherKit** adds tha
 > paused. If the phone link disappears, click **Apply** in TetherKit again. The iPhone is not affected.
 
 A phone uses its mobile data, so part of your traffic goes through it while net-merge runs. Quit
-net-merge when you do not want that.
+net-merge when you do not want that. With an iPhone, small things (a mail check, a chat message) stay
+on your other connections; see *Go easy on phone hotspots* under [Use it](#use-it).
 
 ## Use it
 
@@ -352,7 +355,19 @@ net-merge when you do not want that.
    `unlimited` removes the cap), and `net-merge limit` lists what is set. The cap covers its downloads and
    uploads and is remembered after a restart. Only traffic net-merge relays is capped: an app bound directly
    to an adapter (for example qBittorrent on a fixed interface) ignores it.
-6. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
+6. **Go easy on phone hotspots** is ticked by default. A phone that shares its mobile data gets warm
+   when it works hard for a long time, so net-merge treats an iPhone hotspot (USB or Wi-Fi) with care:
+   - While your other connections have room, it leaves the phone alone. The phone joins in as soon as
+     three or more connections are busy at once, or the others carry 1 Mbit/s: that is when a second
+     link makes things faster.
+   - A download gets the phone's full speed for the first 3 minutes. After that the phone is held at
+     20 Mbit/s, and the menu shows *cooling at 20 Mbit/s*. After a 3-minute rest it gets full speed
+     again.
+
+   Untick it to always use the phone's full speed. `net-merge tray -phone-cool 10` changes the 20
+   (0 means never slow it down), and `-phone "Ethernet 5"` gives the same care to another adapter, for
+   example an Android phone.
+7. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
    `net-merge autostart on`). On a Mac this needs `sudo net-merge install` once.
 
 Tips:
@@ -434,6 +449,23 @@ Run `net-merge list`. It shows which connections are used and why the others are
 
 macOS drops the TetherKit connection each time net-merge starts or quits (pausing and resuming is safe).
 Start net-merge first, then connect the phone. If it vanishes, click **Apply** in TetherKit again.
+</details>
+
+<details>
+<summary><strong>My iPhone gets hot</strong></summary>
+<br>
+
+A phone sharing its mobile data at full speed for a long time gets warm, more so while it also charges
+over the cable. net-merge cannot read the phone's temperature, so it limits the work instead: keep *Go
+easy on phone hotspots* ticked in the menu (see [Use it](#use-it)).
+
+Still too warm? Give the phone less to do:
+
+- Start net-merge with a lower cool-down speed, for example `net-merge tray -phone-cool 5`.
+- Or click the phone's line in the menu and pick a fixed cap, for example 10 Mbit/s.
+
+`net-merge list` shows *(phone hotspot)* next to an adapter it treats this way. An Android phone is not
+recognised by itself: name its adapter with `-phone`, for example `net-merge tray -phone "Ethernet 5"`.
 </details>
 
 <details>
