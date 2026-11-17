@@ -1,4 +1,4 @@
-package engine
+﻿package engine
 
 import (
 	"net"
@@ -15,14 +15,14 @@ var probeTargets = [2][]string{
 
 const (
 	probeTimeout   = 2 * time.Second
-	probeEveryUp   = 15 * time.Second
+	probeEveryUp = 1 * time.Second
 	probeEveryDown = 4 * time.Second
 )
 
-func probe(sl *Slot, f Family) bool {
+func probe(sl *Slot, f Family) (bool, float64) {
 	ip := sl.ip(f)
 	if ip == nil {
-		return false
+		return false, 0
 	}
 	network := "tcp4"
 	if f == Fam6 {
@@ -30,12 +30,14 @@ func probe(sl *Slot, f Family) bool {
 	}
 	for _, t := range probeTargets[f] {
 		d := net.Dialer{LocalAddr: &net.TCPAddr{IP: ip}, Control: nics.ForceEgress(sl.Index, f == Fam6), Timeout: probeTimeout}
+		start := time.Now()
 		if c, err := d.Dial(network, t); err == nil {
+			rttMs := float64(time.Since(start).Microseconds()) / 1000.0
 			c.Close()
-			return true
+			return true, rttMs
 		}
 	}
-	return false
+	return false, 0
 }
 
 type probeJob struct {
@@ -59,7 +61,7 @@ func (s *Scheduler) RunProbes(stop <-chan struct{}) {
 		for _, j := range s.probeDue() {
 			go func() {
 				defer j.sl.probing[j.f].Store(false)
-				s.SetState(j.sl, j.f, probe(j.sl, j.f))
+				ok, rttMs := probe(j.sl, j.f); s.SetStateWithRTT(j.sl, j.f, ok, rttMs)
 			}()
 		}
 	}
@@ -95,3 +97,4 @@ func (s *Scheduler) probeDue() []probeJob {
 	}
 	return due
 }
+

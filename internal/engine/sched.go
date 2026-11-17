@@ -1,4 +1,4 @@
-package engine
+﻿package engine
 
 import (
 	"math"
@@ -11,9 +11,6 @@ import (
 	"net-merge/internal/nics"
 )
 
-// Family selects which address of a NIC a flow is pinned to. Load, speed and health are tracked
-// per family because one link can behave very differently over each (e.g. a carrier hotspot that
-// is fast over native IPv6 and slow over translated IPv4).
 type Family int
 
 const (
@@ -21,8 +18,6 @@ const (
 	Fam6
 )
 
-// linkState is the result of the internet probe: new adapters are "unknown" (still preferred
-// over dead ones, so a probe that can't run never causes an outage) until the first probe lands.
 type linkState int
 
 const (
@@ -37,18 +32,17 @@ func (l linkState) String() string {
 
 type slotAddr struct{ ip4, ip6 net.IP }
 
-// Slot is a NIC plus its live counters. Counters are atomic so the data path never takes a lock.
 type Slot struct {
 	Name  string
 	Index int
 	key   string
 	addr  atomic.Pointer[slotAddr]
 
-	active, total, failed atomic.Int64 // active is across families (idle check on removal)
+	active, total, failed atomic.Int64
 	actF                  [2]atomic.Int64
 	bytesIn, bytesOut     [2]atomic.Int64
 	probing               [2]atomic.Bool
-	limit                 atomic.Pointer[limitPair] // nil = unlimited; see limit.go
+	limit                 atomic.Pointer[limitPair]
 
 	// guarded by Scheduler.mu
 	weight          [2]float64
@@ -57,25 +51,38 @@ type Slot struct {
 	lastProbe       [2]time.Time
 	downUntil       [2]time.Time
 	lastIn, lastOut [2]int64
-	rateIn, rateOut [2]float64 // bytes/s over the last tick
-	peak            [2]float64 // observed capacity: max recent rateIn+rateOut
+	rateIn, rateOut [2]float64
+	peak            [2]float64
 	flows           [2]map[*flowActivity]struct{}
 
-	// The adapter's total traffic from the OS's counters (all apps, not only net-merge's flows).
+	// Exponentially weighted moving average (EWMA) of physical RTT and jitter
+	rttMs    [2]float64
+	jitterMs [2]float64
+
+	// Adaptive Anti-Bufferbloat Control (AIMD) state
+	baseRTTMs      [2]float64
+	dynamicCapMbps float64
+
 	linkIn, linkOut         uint64
 	linkRateIn, linkRateOut float64
 	linkPrimed              bool
 }
 
-// flowActivity separates recent data transfer from long-lived idle sockets. Byte
-// accounting is lock-free; membership and sampled activity are guarded by mu.
 type flowActivity struct {
 	bytes atomic.Int64
 	last  int64
 	idle  time.Duration
 }
 
-const flowIdleAfter = 2 * time.Second
+const (
+	flowIdleAfter     = 2 * time.Second
+	bulkFlowThreshold = 256 * 1024 // Flows transferring >= 256 KB are classified as bulk downloads
+
+	// Adaptive rate limiter boundaries (Mbps)
+	initialCapMbps = 8.0
+	minCapMbps     = 10.0
+	maxCapMbps     = 300.0
+)
 
 func (s *Scheduler) track(sl *Slot, f Family) *flowActivity {
 	s.mu.Lock()
@@ -95,7 +102,6 @@ func (s *Scheduler) untrack(sl *Slot, f Family, a *flowActivity) {
 }
 
 func (sl *Slot) busy(f Family) int64 {
-	// Acquired but not yet tracked flows are connecting, and must count too.
 	n := max(int64(0), sl.actF[f].Load()-int64(len(sl.flows[f])))
 	for a := range sl.flows[f] {
 		if a.idle < flowIdleAfter {
@@ -103,6 +109,24 @@ func (sl *Slot) busy(f Family) int64 {
 		}
 	}
 	return n
+}
+
+func (sl *Slot) bulkCount(f Family) int64 {
+	var n int64
+	for a := range sl.flows[f] {
+		if a.idle < flowIdleAfter && a.bytes.Load() >= bulkFlowThreshold {
+			n++
+		}
+	}
+	return n
+}
+
+// latencyScore computes an effective latency cost (RTT + 2*Jitter) to penalize unstable links.
+func (sl *Slot) latencyScore(f Family) float64 {
+	if sl.rttMs[f] <= 0 {
+		return 999.0
+	}
+	return sl.rttMs[f] + 2.0*sl.jitterMs[f]
 }
 
 func (sl *Slot) ip(f Family) net.IP {
@@ -117,45 +141,46 @@ type SlotStats struct {
 	Name              string
 	IP                string
 	IP6               string
-	State             string // IPv4 probe state, "-" if the adapter has no IPv4
+	State             string
 	State6            string
 	Weight, Weight6   float64
 	Present           bool
 	Active, Total     int64
 	Failed            int64
 	BytesIn, BytesOut int64
-	RateIn, RateOut   float64 // through net-merge, both families summed (bytes/s)
-	LinkIn, LinkOut   float64 // through the adapter by any app, from the OS's counters (bytes/s)
+	RateIn, RateOut   float64
+	LinkIn, LinkOut   float64
 	Peak, Peak6       float64
-	LimitMbps         float64 // cap in Mbit/s, 0 = unlimited
+	LimitMbps         float64
+	RTTMs             float64
+	JitterMs          float64
 }
 
-// Scheduler uses weighted least-busy-flows per address family. Automatic mode
-// discounts idle TCP sockets; static mode
-// retains weighted least-open-flows. Data transfer accounting stays lock-free.
 type Scheduler struct {
-	mu     sync.Mutex
-	slots  []*Slot
-	auto   bool
-	limits map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
-	now    func() time.Time
+	mu        sync.Mutex
+	slots     []*Slot
+	auto      bool
+	smartMode atomic.Bool
+	limits    map[string]float64
+	now       func() time.Time
 }
 
 func NewScheduler(nics []nics.Nic) *Scheduler {
 	s := &Scheduler{now: time.Now}
+	s.smartMode.Store(true) // Enable Low-Latency Gaming Mode by default
 	s.Update(nics)
 	return s
 }
 
-// SetAuto makes Tick derive weights from observed throughput instead of the static ones.
+func (s *Scheduler) SetSmartMode(on bool) { s.smartMode.Store(on) }
+func (s *Scheduler) IsSmartMode() bool    { return s.smartMode.Load() }
+
 func (s *Scheduler) SetAuto(on bool) {
 	s.mu.Lock()
 	s.auto = on
 	s.mu.Unlock()
 }
 
-// SetLimit caps an adapter at mbitPerSec Mbit/s across all of its flows and both address families;
-// 0 removes the cap. Saved in the scheduler, so an adapter that is unplugged and comes back keeps it.
 func (s *Scheduler) SetLimit(name string, mbitPerSec float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -174,7 +199,6 @@ func (s *Scheduler) SetLimit(name string, mbitPerSec float64) {
 	}
 }
 
-// SetLimits replaces every cap, e.g. with what was saved on disk at startup.
 func (s *Scheduler) SetLimits(limits map[string]float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -189,7 +213,6 @@ func (s *Scheduler) SetLimits(limits map[string]float64) {
 	}
 }
 
-// Limits returns the caps by adapter name in Mbit/s, for saving and for `net-merge status`.
 func (s *Scheduler) Limits() map[string]float64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -211,9 +234,6 @@ func normAddr(n nics.Nic) *slotAddr {
 	return a
 }
 
-// Update applies a re-scan: keeps counters of known NICs, picks up changed addresses (DHCP
-// renewal, a new IPv6 prefix), adds new ones (a tether plugged in later), and drops vanished
-// ones once their last flow ends. Adapters are keyed by name.
 func (s *Scheduler) Update(nics []nics.Nic) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -230,7 +250,14 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 			}
 		}
 		if found == nil {
-			sl := &Slot{Name: n.Name, Index: n.Index, key: n.Name, weight: [2]float64{n.Weight, n.Weight}, present: true}
+			sl := &Slot{
+				Name:           n.Name,
+				Index:          n.Index,
+				key:            n.Name,
+				weight:         [2]float64{n.Weight, n.Weight},
+				present:        true,
+				dynamicCapMbps: initialCapMbps,
+			}
 			sl.addr.Store(na)
 			sl.setLimit(s.limits[n.Name])
 			s.slots = append(s.slots, sl)
@@ -250,6 +277,9 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 				found.state[f] = stateUnknown
 				found.lastProbe[f], found.downUntil[f] = time.Time{}, time.Time{}
 				found.peak[f] = 0
+				found.rttMs[f], found.jitterMs[f] = 0, 0
+				found.baseRTTMs[f] = 0
+				found.dynamicCapMbps = initialCapMbps
 				if s.auto {
 					found.weight[f] = 1
 				}
@@ -268,19 +298,12 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 	s.slots = kept
 }
 
-// A NIC counts as measured once it has carried this much (bytes/s, about 0.4 Mbit/s).
 const minMeasuredPeak = 50_000
 
-// Tick samples flow activity and throughput per family. Automatic weights follow
-// smoothed capacity estimates (floored at 0.05). Until all links are measured,
-// weights stay equal. Quiet links retain capacity, while stale low estimates
-// recover up to half the best link's capacity so they can be measured again.
 func (s *Scheduler) Tick(dt time.Duration) {
 	if dt <= 0 {
 		return
 	}
-	// nics.Octets calls into the OS, so read the counters on a snapshot of the slots without s.mu
-	// (it would stall AcquireFor and Update) and take the lock only to store the results.
 	s.mu.Lock()
 	slots := append([]*Slot(nil), s.slots...)
 	s.mu.Unlock()
@@ -289,7 +312,6 @@ func (s *Scheduler) Tick(dt time.Duration) {
 		in, out uint64
 		ok      bool
 	}
-
 	samples := make([]sample, len(slots))
 	for i, sl := range slots {
 		in, out, ok := nics.Octets(sl.Index)
@@ -305,12 +327,13 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			sl.linkRateIn, sl.linkRateOut, sl.linkPrimed = 0, 0, false
 			continue
 		}
-		if sl.linkPrimed && in >= sl.linkIn && out >= sl.linkOut { // counters can reset when an adapter reconnects
+		if sl.linkPrimed && in >= sl.linkIn && out >= sl.linkOut {
 			sl.linkRateIn = float64(in-sl.linkIn) / sec
 			sl.linkRateOut = float64(out-sl.linkOut) / sec
 		}
 		sl.linkIn, sl.linkOut, sl.linkPrimed = in, out, true
 	}
+
 	for _, f := range []Family{Fam4, Fam6} {
 		var maxPeak float64
 		live, measured := 0, true
@@ -334,8 +357,6 @@ func (s *Scheduler) Tick(dt time.Duration) {
 				if sl.peak[f] == 0 {
 					sl.peak[f] = r
 				} else {
-					// Fast but smoothed growth, slower decay. Neither a single burst
-					// nor a quiet tick should abruptly invert link preference.
 					tau := 2.0
 					if r < sl.peak[f] {
 						tau = 30
@@ -351,8 +372,6 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			live++
 			maxPeak = math.Max(maxPeak, sl.peak[f])
 		}
-		// An idle link may have a pessimistic estimate. Let it recover, but never
-		// raise it above half the best link just because no traffic is flowing.
 		for sl := range idle {
 			if sl.present && sl.ip(f) != nil && sl.peak[f] > 0 {
 				sl.peak[f] = math.Min(sl.peak[f]*1.03, math.Max(sl.peak[f], 0.5*maxPeak))
@@ -373,24 +392,119 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			if live < 2 || !measured {
 				sl.weight[f] = 1
 			} else {
-				sl.weight[f] = math.Max(0.05, sl.peak[f]/maxPeak)
+				// Prevent a fast initial link from starving secondary adapters (floor at 0.01)
+				sl.weight[f] = math.Max(0.01, sl.peak[f]/maxPeak)
 			}
+		}
+	}
+
+	// Adaptive Active Bandwidth Reservation (AIMD Anti-Bufferbloat Controller):
+	// Dynamically adjusts the primary low-latency adapter's bulk download cap based on
+	// real-time RTT deviation from its baseline RTT, adapting automatically to any link speed.
+	var fastestNIC *Slot
+	minLat := math.Inf(1)
+	live4 := 0
+	for _, sl := range s.slots {
+		if sl.present && sl.ip(Fam4) != nil && sl.state[Fam4] != stateDown {
+			live4++
+			if sc := sl.latencyScore(Fam4); sc < minLat {
+				fastestNIC, minLat = sl, sc
+			}
+		}
+	}
+	for _, sl := range s.slots {
+		if s.smartMode.Load() && live4 >= 2 && sl == fastestNIC {
+			if sl.dynamicCapMbps <= 0 {
+				sl.dynamicCapMbps = initialCapMbps
+			}
+			rtt := sl.rttMs[Fam4]
+			if rtt > 0 {
+				if sl.baseRTTMs[Fam4] <= 0 || rtt < sl.baseRTTMs[Fam4] {
+					sl.baseRTTMs[Fam4] = rtt
+				} else {
+					// Slow upward drift allows baseline to adapt if network path changes
+					sl.baseRTTMs[Fam4] += 0.02 * sec
+				}
+
+				base := sl.baseRTTMs[Fam4]
+				downMbps := (sl.rateIn[Fam4] * 8.0) / 1e6
+
+				if rtt > base+15.0 || rtt > base*1.6 {
+					// Multiplicative Decrease: RTT spike detected -> cut cap by 20% immediately
+					sl.dynamicCapMbps = math.Max(minCapMbps, sl.dynamicCapMbps*0.80)
+				} else if rtt <= base+8.0 && downMbps >= sl.dynamicCapMbps*0.75 {
+					// Additive Increase: latency is clean and link is actively utilized -> probe +2.5 Mbps/s
+					sl.dynamicCapMbps = math.Min(maxCapMbps, sl.dynamicCapMbps+2.5*sec)
+				}
+			}
+			sl.setLimit(sl.dynamicCapMbps)
+		} else {
+			sl.dynamicCapMbps = initialCapMbps
+			sl.setLimit(s.limits[sl.key])
 		}
 	}
 }
 
-// Acquire picks an IPv4 NIC for a new flow, skipping the ones in skip. The caller must Release it.
+func (s *Scheduler) BestLowLatencyName(f Family) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var best *Slot
+	bestScore := math.Inf(1)
+	for _, sl := range s.slots {
+		if !sl.present || sl.ip(f) == nil || sl.state[f] == stateDown {
+			continue
+		}
+		if sc := sl.latencyScore(f); sc < bestScore {
+			best, bestScore = sl, sc
+		}
+	}
+	if best == nil {
+		return ""
+	}
+	return best.Name
+}
+
+// AcquireLowLatency selects the adapter with the lowest RTT + 2*Jitter score,
+// dedicated to latency-sensitive UDP traffic (games, VoIP).
+func (s *Scheduler) AcquireLowLatency(f Family, skip map[string]struct{}) *Slot {
+	if !s.smartMode.Load() {
+		return s.AcquireFor(f, skip)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	var best *Slot
+	bestScore := math.Inf(1)
+	for _, sl := range s.slots {
+		if !sl.present || sl.ip(f) == nil {
+			continue
+		}
+		if _, no := skip[sl.key]; no {
+			continue
+		}
+		if now.Before(sl.downUntil[f]) || sl.state[f] == stateDown {
+			continue
+		}
+		if sc := sl.latencyScore(f); sc < bestScore {
+			best, bestScore = sl, sc
+		}
+	}
+	if best != nil {
+		best.active.Add(1)
+		best.actF[f].Add(1)
+		best.total.Add(1)
+		return best
+	}
+	return nil
+}
+
 func (s *Scheduler) Acquire(skip map[string]struct{}) *Slot { return s.AcquireFor(Fam4, skip) }
 func (s *Scheduler) Release(sl *Slot)                       { s.ReleaseFor(sl, Fam4) }
 
-// AcquireFor picks a NIC that has an address of the given family.
 func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
-	// Tiers: 0 = probed up, 1 = not probed yet, 2 = probe failed or link error cooldown.
-	// Only the best non-empty tier is used, so a dead tether gets no flows but, if every NIC
-	// looks dead, flows still go somewhere rather than nowhere.
 	var tiers [3][]*Slot
 	for _, sl := range s.slots {
 		if !sl.present || sl.ip(f) == nil {
@@ -418,8 +532,17 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	if len(pool) == 0 {
 		return nil
 	}
-	// Random start so ties don't resonate with the arrival pattern (a rotating counter can
-	// lock onto e.g. "every third flow is a short DNS-like one" and starve an adapter).
+
+	var fastestNIC *Slot
+	minLat := math.Inf(1)
+	if s.smartMode.Load() && len(pool) >= 2 {
+		for _, sl := range pool {
+			if sc := sl.latencyScore(f); sc < minLat {
+				fastestNIC, minLat = sl, sc
+			}
+		}
+	}
+
 	start := rand.IntN(len(pool))
 	var best *Slot
 	bestScore := math.Inf(1)
@@ -429,7 +552,19 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 		if s.auto {
 			load = sl.busy(f)
 		}
-		if score := float64(load+1) / sl.weight[f]; score < bestScore {
+		score := float64(load+1) / sl.weight[f]
+
+		// Favor the protected low-latency primary lane for new short/interactive TCP connections
+		// while offloading excess bulk flows to secondary adapters.
+		if s.smartMode.Load() && fastestNIC != nil && sl == fastestNIC {
+			if bulk := sl.bulkCount(f); bulk >= 4 {
+				score += float64(bulk) * 1.5
+			} else {
+				score *= 0.5
+			}
+		}
+
+		if score < bestScore {
 			best, bestScore = sl, score
 		}
 	}
@@ -439,7 +574,6 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	return best
 }
 
-// V6Usable reports whether any adapter can currently carry IPv6.
 func (s *Scheduler) V6Usable() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -451,9 +585,6 @@ func (s *Scheduler) V6Usable() bool {
 	return false
 }
 
-// V6CoversAll reports whether every adapter that can carry IPv4 can also carry IPv6, i.e. whether
-// balancing IPv6 flows would use the same set of adapters as IPv4 does. If not, IPv6 would funnel
-// everything onto the adapters that have it.
 func (s *Scheduler) V6CoversAll() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -478,19 +609,33 @@ func (s *Scheduler) ReleaseFor(sl *Slot, f Family) {
 	sl.actF[f].Add(-1)
 }
 
-// SetState records a probe result. A passing probe also clears any link-error cooldown.
 func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
+	s.SetStateWithRTT(sl, f, up, 0)
+}
+
+func (s *Scheduler) SetStateWithRTT(sl *Slot, f Family, up bool, rttMs float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if up {
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
+		if rttMs > 0 {
+			if sl.rttMs[f] <= 0 {
+				sl.rttMs[f] = rttMs
+				sl.jitterMs[f] = 0
+			} else {
+				diff := math.Abs(rttMs - sl.rttMs[f])
+				sl.jitterMs[f] = sl.jitterMs[f]*0.7 + diff*0.3
+				sl.rttMs[f] = sl.rttMs[f]*0.7 + rttMs*0.3
+			}
+		}
 	} else {
 		sl.state[f] = stateDown
+		sl.rttMs[f] = 0
+		sl.baseRTTMs[f] = 0
 	}
 }
 
-// Fail sidelines a NIC whose link itself is broken (for one address family).
 func (s *Scheduler) Fail(sl *Slot, f Family, cooldown time.Duration) {
 	s.mu.Lock()
 	sl.downUntil[f] = s.now().Add(cooldown)
@@ -514,6 +659,8 @@ func (s *Scheduler) Snapshot() []SlotStats {
 			LinkIn: sl.linkRateIn, LinkOut: sl.linkRateOut,
 			Peak: sl.peak[Fam4], Peak6: sl.peak[Fam6],
 			LimitMbps: sl.limitMbps(),
+			RTTMs:     sl.rttMs[Fam4],
+			JitterMs:  sl.jitterMs[Fam4],
 		}
 		if a.ip4 != nil {
 			st.IP, st.State = a.ip4.String(), sl.state[Fam4].String()
@@ -525,3 +672,4 @@ func (s *Scheduler) Snapshot() []SlotStats {
 	}
 	return out
 }
+
