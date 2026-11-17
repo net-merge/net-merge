@@ -19,7 +19,7 @@
     ];
   };
 
-  vendorHash = "sha256-jbafKGjgOXZAcyQVILbZ3ZUUMhD8gpz+NGBT48Du7mA=";
+  vendorHash = "sha256-5a72T/sPnQB0Za4WoL6LN7k/BNJ4MiYTQPGE825sJ+A=";
   subPackages = [ "cmd/net-merge" ];
   env.CGO_ENABLED = 0;
   ldflags = [
