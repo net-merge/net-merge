@@ -55,4 +55,7 @@ func (u *trayUI) showUpdate(latest string) {
 	u.versionItem.SetTitle(updateLabel(latest))
 	u.versionItem.SetTooltip("You are running " + versionLabel(u.version) +
 		". Click to open the " + versionLabel(latest) + " release page on GitHub.")
+	if u.native != nil {
+		u.native.SetLatest(latest)
+	}
 }

@@ -28,7 +28,13 @@ func Run(t *tun.Tun, sched *engine.Scheduler, bal *engine.Balancer, stateDir, ve
 	ui := &trayUI{tun: t, sched: sched, bal: bal, stateDir: stateDir, version: version, startOn: startOn,
 		iconOn: icon.Tray(true), iconOff: icon.Tray(false), ready: ready}
 	ui.ap.enabled = autoPause
-	exit := func() { t.Close(); state.Clear(stateDir) }
+	exit := func() {
+		if ui.native != nil {
+			ui.native.Close()
+		}
+		t.Close()
+		state.Clear(stateDir)
+	}
 	systray.Run(ui.onReady, exit)
 	exit() // macOS's Run returns on Quit without calling onExit; both are idempotent
 }
@@ -60,6 +66,8 @@ type trayUI struct {
 	lastRows                                         [trayRows]string
 	lastErr                                          string
 	busyUntil                                        time.Time
+	native                                           nativePanel
+	nativeClicks                                     chan nativeAction
 }
 
 func (u *trayUI) onReady() {
@@ -100,6 +108,8 @@ func (u *trayUI) onReady() {
 	u.toggleItem = systray.AddMenuItem("Start merging", "")
 	u.versionItem = systray.AddMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
 	quit := systray.AddMenuItem("Quit", "Turns system-wide mode off and exits")
+	u.nativeClicks = make(chan nativeAction, 32)
+	u.setupNative()
 	go u.watchUpdates()
 
 	go func() {
@@ -120,6 +130,8 @@ func (u *trayUI) onReady() {
 		for {
 			u.refresh()
 			select {
+			case action := <-u.nativeClicks:
+				u.nativeAction(action)
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
 			case <-u.autoItem.ClickedCh:
@@ -166,6 +178,10 @@ func (u *trayUI) onReady() {
 					u.applyLimit(req.Adapter, req.Mbps)
 				}
 				switch { // `net-merge on|off|quit` from a terminal
+				case state.TakeMarker(u.stateDir, "show"):
+					if u.native != nil {
+						u.native.Show()
+					}
 				case state.TakeMarker(u.stateDir, "quit"):
 					systray.Quit()
 					return
@@ -312,6 +328,11 @@ func (u *trayUI) refresh() {
 	if tip != u.lastTip {
 		systray.SetTooltip(tip)
 		u.lastTip = tip
+	}
+	if u.native != nil {
+		u.native.Refresh(nativeView{On: on, State: state, Down: down, Up: up, NICs: live,
+			V6Auto: u.bal.V6Mode() == engine.V6Auto, AutoPause: u.ap.enabled,
+			SignIn: u.signInItem.Checked(), Version: u.version, Error: u.lastErr})
 	}
 }
 
