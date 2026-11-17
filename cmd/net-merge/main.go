@@ -1,4 +1,4 @@
-package main
+﻿package main
 
 import (
 	"flag"
@@ -148,6 +148,7 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	}
 
 	bal := engine.NewBalancer(sched)
+	engine.StartWebUI(sched)
 	v6, ok := engine.ParseV6Mode(c.ipv6)
 	if !ok {
 		return nil, nil, fmt.Errorf(`-ipv6 must be auto, on or off, got %q`, c.ipv6)
