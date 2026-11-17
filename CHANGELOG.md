@@ -5,6 +5,16 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Added
+- Windows 11-style tray flyout with system Fluent icons, rounded corners, automatic light/dark
+  and High Contrast themes, keyboard navigation and per-monitor scaling. Adapter submenus include
+  higher speed limits, physical enable/disable and display aliases. Public IPs are hidden by default.
+- Per-adapter ISP discovery over pinned HTTPS sockets, cached provider names and official website
+  favicons (PNG, JPEG, ICO and SVG). Unavailable logos fall back to Windows network icons.
+
+### Changed
+- The Windows tray starts paused; use `tray -off=false` to start merging immediately.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed

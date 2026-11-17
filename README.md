@@ -50,6 +50,26 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 |---|---|---|
 | ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: total, each adapter's speed and flows, IPv6 option, Pause merging, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause merging, Quit](docs/tray-menu-macos.png) |
 
+## Windows flyout
+
+On Windows, clicking the tray icon opens a rounded flyout that follows the system light/dark theme
+and uses Segoe Fluent Icons. Each connection shows its ISP (when available), adapter, live speed and
+flow count. Click a connection to set its speed limit, disable/enable the physical adapter, or rename
+its display label. Renaming does not change the Windows interface name.
+
+The Windows tray starts paused. Choose **Start merging**, or launch `net-merge tray -off=false`.
+**Show public IP addresses** is off by default, and its choice and display names are remembered.
+
+ISP information comes from an HTTPS request to `ipwho.is` pinned to each adapter, not from the local
+Wi-Fi name. Only the public IP and provider connection fields are requested. Names are cached for six
+hours, with a two-minute retry after a failed lookup. Logos are favicons fetched from Google's favicon
+service or the provider's own HTTPS website. If a site is unavailable or has no usable icon, the
+connection keeps its Windows Wi-Fi/Ethernet icon. Neither lookup failures nor image downloads stop merging.
+
+| Windows dark theme | Windows light theme |
+|---|---|
+| ![Windows flyout with ISP names and Fluent icons](docs/windows-flyout-dark.png) | ![The same flyout following the Windows light theme](docs/windows-flyout-light.png) |
+
 ## How it helps
 
 net-merge gives every new connection to one of your links. When an app opens many connections, they
