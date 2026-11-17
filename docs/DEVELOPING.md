@@ -75,6 +75,29 @@ The app's connection ends inside the userland stack. net-merge then opens a seco
 
 ## Build
 
+### Windows flyout
+
+`internal/tray/flyout_windows.go` owns a separate Win32 message-loop thread. The existing tray ticker
+publishes immutable snapshots to it, and UI actions go back through a buffered channel. The TUN,
+probes and scheduler continue independently of the flyout. DWM supplies window corners and accent
+color; Segoe Fluent Icons (MDL2 fallback on Windows 10) are system fonts, not redistributed assets.
+
+`internal/provider` pins HTTPS lookup sockets to each adapter, caches results by source address,
+and bounds image downloads and raster dimensions. SVG favicons use oksvg/rasterx. Provider lookup
+failures fall back to adapter names and system network icons. Display aliases and the public-IP
+visibility setting live in `tray-preferences.json`; aliases never rename the Windows interface.
+
+For a read-only preview without a second TUN or changes to merging/adapter settings:
+
+```
+net-merge _preview -state-dir <running-tray-state-directory>
+```
+
+The preview alone accepts `NET_MERGE_PREVIEW_THEME=light` or `dark` for visual QA; the installed tray
+always follows Windows. `net-merge _show` opens the running Windows flyout through its control marker.
+
+### Compiling
+
 Needs Go (see `go.mod`) and, for the Windows installer, [Inno Setup 6](https://jrsoftware.org/isinfo.php).
 
 ```
