@@ -236,6 +236,15 @@ func main() {
 	switch cmd {
 	case "version":
 		fmt.Println("net-merge", version)
+	case "_preview":
+		cmdPreview(args)
+	case "_show":
+		fs := flag.NewFlagSet("_show", flag.ExitOnError)
+		dir := fs.String("state-dir", state.DefaultDir(), "tray state directory")
+		fs.Parse(args)
+		if err := state.SendMarker(*dir, "show"); err != nil {
+			die(err)
+		}
 	case "install", "uninstall":
 		if err := platform.Install(cmd == "uninstall"); err != nil {
 			die(err)

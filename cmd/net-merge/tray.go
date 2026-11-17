@@ -21,7 +21,7 @@ func cmdTray(args []string) {
 	var c common
 	c.register(fs)
 	hidden := fs.Bool("hidden", true, "hide the console window of the elevated process")
-	startOff := fs.Bool("off", false, "start with system-wide mode OFF (default: ON)")
+	startOff := fs.Bool("off", defaultTrayPaused, "start with system-wide mode OFF (Windows defaults to paused; -off=false starts merging)")
 	autoPause := fs.Bool("auto-pause", true, "pause by itself when fewer than two connections work, and resume when two do (pausing by hand always wins)")
 	fs.Parse(args)
 
