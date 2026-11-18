@@ -98,7 +98,7 @@ func (s *Scheduler) untrack(sl *Slot, f Family, a *flowActivity) {
 func (s *Scheduler) trackUDP(sl *Slot, f Family) *udpFlowActivity {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u := &udpFlowActivity{started: s.now()}
+	u := &udpFlowActivity{}
 	if sl.udpFlows[f] == nil {
 		sl.udpFlows[f] = make(map[*udpFlowActivity]struct{})
 	}

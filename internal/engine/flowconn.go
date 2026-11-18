@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"net-merge/internal/nics"
@@ -69,37 +68,50 @@ func (b *Balancer) DialPinned(ctx context.Context, host string, port int) (net.C
 	return &slotConn{TCPConn: c.(*net.TCPConn), sl: sl, fam: f, s: b.S, activity: b.S.track(sl, f)}, nil
 }
 
+// udpFlowActivity tracks per-socket UDP packet statistics within an active burst window to detect real-time game or voice traffic.
 type udpFlowActivity struct {
-	started                               time.Time
-	lastActive, packets, smallPkts, bytes atomic.Int64
-	ignoredPort                           atomic.Bool
+	mu                        sync.Mutex
+	started, lastActive       time.Time
+	packets, smallPkts, bytes int64
 }
 
 func (u *udpFlowActivity) record(n int, addr net.Addr, now time.Time) {
-	u.lastActive.Store(now.UnixNano())
-	u.packets.Add(1)
-	u.bytes.Add(int64(n))
-	if n < 300 {
-		u.smallPkts.Add(1)
-	}
+	// Skip non-game/background protocols per packet so a single DNS/QUIC probe does not permanently taint the socket.
 	if ua, ok := addr.(*net.UDPAddr); ok && (ua.Port == 53 || ua.Port == 123 || ua.Port == 443 || ua.Port == 5353) {
-		u.ignoredPort.Store(true)
+		return
 	}
+	u.mu.Lock()
+	// Start a fresh activity window on the first valid packet or after >3s of idle time.
+	if u.started.IsZero() || now.Sub(u.lastActive) > 3*time.Second {
+		u.started = now
+		u.packets = 0
+		u.smallPkts = 0
+		u.bytes = 0
+	}
+	if now.After(u.lastActive) {
+		u.lastActive = now
+	}
+	u.packets++
+	u.bytes += int64(n)
+	if n < 600 {
+		u.smallPkts++
+	}
+	u.mu.Unlock()
 }
+
+// isGameLike reports whether the current active window sustains a low-bandwidth, steady stream of small UDP packets (>=5s, >=5 pkts/s, >=50% <600B, <1Mbps).
 func (u *udpFlowActivity) isGameLike(now time.Time) bool {
-	if u.ignoredPort.Load() {
-		return false
-	}
-	last := u.lastActive.Load()
-	if last == 0 || now.Sub(time.Unix(0, last)) > 3*time.Second {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.started.IsZero() || now.Sub(u.lastActive) > 3*time.Second {
 		return false
 	}
 	dur := now.Sub(u.started).Seconds()
-	if dur < 10 {
+	if dur < 5 {
 		return false
 	}
-	pkts, small := float64(u.packets.Load()), float64(u.smallPkts.Load())
-	return pkts/dur >= 10 && small >= 0.7*pkts && float64(u.bytes.Load())*8/dur < 1_000_000
+	pkts, small := float64(u.packets), float64(u.smallPkts)
+	return pkts/dur >= 5 && small >= 0.5*pkts && float64(u.bytes)*8/dur < 1_000_000
 }
 
 type slotPacketConn struct {

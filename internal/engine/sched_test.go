@@ -518,3 +518,45 @@ func TestGameModeSteersNewFlows(t *testing.T) {
 		s.Release(got)
 	}
 }
+
+func TestGameModeActivityWindowAndIgnoredPorts(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4)
+
+	// Background DNS/QUIC probes followed by a 60s idle gap must neither trigger nor taint the socket.
+	u.record(64, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53}, now)
+	u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 443}, now)
+	now = now.Add(60 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 inactive after background probes and idle gap")
+	}
+
+	// Sustaining small UDP packets for 6s should start a fresh window and steer new TCP flows to eth1.
+	for i := 0; i < 6; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 10; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive after 6s active burst")
+	}
+	if got := s.Acquire(nil); got == nil || got.Name != "eth1" {
+		t.Fatalf("expected steering to eth1, got %v", got)
+	} else {
+		s.Release(got)
+	}
+
+	// Idle >3s should clear gameActive.
+	now = now.Add(4 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 gameActive cleared after >3s idle")
+	}
+}
