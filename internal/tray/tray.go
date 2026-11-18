@@ -51,15 +51,15 @@ type trayUI struct {
 	limitUnlim  [trayRows]*systray.MenuItem
 	limitPreset [trayRows][]*systray.MenuItem
 
-	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
-	versionItem                                      *systray.MenuItem
-	rows                                             []*systray.MenuItem
-	lastOn                                           *bool
-	lastHeader                                       string
-	lastTip                                          string
-	lastRows                                         [trayRows]string
-	lastErr                                          string
-	busyUntil                                        time.Time
+	header, toggleItem, v6Item, gameItem, autoItem, signInItem *systray.MenuItem
+	versionItem                                                *systray.MenuItem
+	rows                                                       []*systray.MenuItem
+	lastOn                                                     *bool
+	lastHeader                                                 string
+	lastTip                                                    string
+	lastRows                                                   [trayRows]string
+	lastErr                                                    string
+	busyUntil                                                  time.Time
 }
 
 func (u *trayUI) onReady() {
@@ -95,6 +95,7 @@ func (u *trayUI) onReady() {
 	}
 	systray.AddSeparator()
 	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.gameItem = systray.AddMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
 	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
 	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
 	u.toggleItem = systray.AddMenuItem("Start merging", "")
@@ -122,6 +123,14 @@ func (u *trayUI) onReady() {
 			select {
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
+			case <-u.gameItem.ClickedCh:
+				if u.gameItem.Checked() {
+					u.gameItem.Uncheck()
+					u.sched.SetGameMode(false)
+				} else {
+					u.gameItem.Check()
+					u.sched.SetGameMode(true)
+				}
 			case <-u.autoItem.ClickedCh:
 				if u.autoItem.Checked() {
 					u.autoItem.Uncheck()

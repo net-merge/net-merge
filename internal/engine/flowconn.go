@@ -5,6 +5,8 @@ import (
 	"errors"
 	"net"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"net-merge/internal/nics"
 )
@@ -67,16 +69,55 @@ func (b *Balancer) DialPinned(ctx context.Context, host string, port int) (net.C
 	return &slotConn{TCPConn: c.(*net.TCPConn), sl: sl, fam: f, s: b.S, activity: b.S.track(sl, f)}, nil
 }
 
+type udpFlowActivity struct {
+	started                               time.Time
+	lastActive, packets, smallPkts, bytes atomic.Int64
+	ignoredPort                           atomic.Bool
+}
+
+func (u *udpFlowActivity) record(n int, addr net.Addr, now time.Time) {
+	u.lastActive.Store(now.UnixNano())
+	u.packets.Add(1)
+	u.bytes.Add(int64(n))
+	if n < 300 {
+		u.smallPkts.Add(1)
+	}
+	if ua, ok := addr.(*net.UDPAddr); ok && (ua.Port == 53 || ua.Port == 123 || ua.Port == 443 || ua.Port == 5353) {
+		u.ignoredPort.Store(true)
+	}
+}
+func (u *udpFlowActivity) isGameLike(now time.Time) bool {
+	if u.ignoredPort.Load() {
+		return false
+	}
+	last := u.lastActive.Load()
+	if last == 0 || now.Sub(time.Unix(0, last)) > 3*time.Second {
+		return false
+	}
+	dur := now.Sub(u.started).Seconds()
+	if dur < 10 {
+		return false
+	}
+	pkts, small := float64(u.packets.Load()), float64(u.smallPkts.Load())
+	return pkts/dur >= 10 && small >= 0.7*pkts && float64(u.bytes.Load())*8/dur < 1_000_000
+}
+
 type slotPacketConn struct {
 	net.PacketConn
-	sl  *Slot
-	fam Family
+	sl   *Slot
+	fam  Family
+	s    *Scheduler
+	once sync.Once
+	udp  *udpFlowActivity
 }
 
 func (c *slotPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	n, a, err := c.PacketConn.ReadFrom(p)
 	if n > 0 {
 		c.sl.bytesIn[c.fam].Add(int64(n))
+		if c.udp != nil {
+			c.udp.record(n, a, c.s.now())
+		}
 		c.sl.throttlePacket(true, n)
 	}
 	return n, a, err
@@ -85,7 +126,12 @@ func (c *slotPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 func (c *slotPacketConn) WriteTo(p []byte, a net.Addr) (int, error) {
 	c.sl.throttlePacket(false, len(p))
 	n, err := c.PacketConn.WriteTo(p, a)
-	c.sl.bytesOut[c.fam].Add(int64(n))
+	if n > 0 {
+		c.sl.bytesOut[c.fam].Add(int64(n))
+		if c.udp != nil {
+			c.udp.record(n, a, c.s.now())
+		}
+	}
 	return n, err
 }
 
@@ -115,6 +161,15 @@ func (b *Balancer) ListenUDP(ctx context.Context, f Family) (net.PacketConn, err
 			lastErr = err
 			continue
 		}
-		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f}, nil
+		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f, s: b.S, udp: b.S.trackUDP(sl, f)}, nil
 	}
+}
+
+func (c *slotPacketConn) Close() error {
+	c.once.Do(func() {
+		if c.s != nil && c.udp != nil {
+			c.s.untrackUDP(c.sl, c.fam, c.udp)
+		}
+	})
+	return c.PacketConn.Close()
 }

@@ -60,6 +60,8 @@ type Slot struct {
 	rateIn, rateOut [2]float64 // bytes/s over the last tick
 	peak            [2]float64 // observed capacity: max recent rateIn+rateOut
 	flows           [2]map[*flowActivity]struct{}
+	udpFlows        [2]map[*udpFlowActivity]struct{}
+	gameActive      bool
 
 	// The adapter's total traffic from the OS's counters (all apps, not only net-merge's flows).
 	linkIn, linkOut         uint64
@@ -91,6 +93,21 @@ func (s *Scheduler) track(sl *Slot, f Family) *flowActivity {
 func (s *Scheduler) untrack(sl *Slot, f Family, a *flowActivity) {
 	s.mu.Lock()
 	delete(sl.flows[f], a)
+	s.mu.Unlock()
+}
+func (s *Scheduler) trackUDP(sl *Slot, f Family) *udpFlowActivity {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	u := &udpFlowActivity{started: s.now()}
+	if sl.udpFlows[f] == nil {
+		sl.udpFlows[f] = make(map[*udpFlowActivity]struct{})
+	}
+	sl.udpFlows[f][u] = struct{}{}
+	return u
+}
+func (s *Scheduler) untrackUDP(sl *Slot, f Family, u *udpFlowActivity) {
+	s.mu.Lock()
+	delete(sl.udpFlows[f], u)
 	s.mu.Unlock()
 }
 
@@ -134,11 +151,12 @@ type SlotStats struct {
 // discounts idle TCP sockets; static mode
 // retains weighted least-open-flows. Data transfer accounting stays lock-free.
 type Scheduler struct {
-	mu     sync.Mutex
-	slots  []*Slot
-	auto   bool
-	limits map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
-	now    func() time.Time
+	mu       sync.Mutex
+	slots    []*Slot
+	auto     bool
+	gameMode bool
+	limits   map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
+	now      func() time.Time
 }
 
 func NewScheduler(nics []nics.Nic) *Scheduler {
@@ -148,11 +166,9 @@ func NewScheduler(nics []nics.Nic) *Scheduler {
 }
 
 // SetAuto makes Tick derive weights from observed throughput instead of the static ones.
-func (s *Scheduler) SetAuto(on bool) {
-	s.mu.Lock()
-	s.auto = on
-	s.mu.Unlock()
-}
+func (s *Scheduler) SetAuto(on bool)     { s.mu.Lock(); s.auto = on; s.mu.Unlock() }
+func (s *Scheduler) SetGameMode(on bool) { s.mu.Lock(); s.gameMode = on; s.mu.Unlock() }
+func (s *Scheduler) GameMode() bool      { s.mu.Lock(); defer s.mu.Unlock(); return s.gameMode }
 
 // SetLimit caps an adapter at mbitPerSec Mbit/s across all of its flows and both address families;
 // 0 removes the cap. Saved in the scheduler, so an adapter that is unplugged and comes back keeps it.
@@ -298,6 +314,19 @@ func (s *Scheduler) Tick(dt time.Duration) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	now := s.now()
+	for _, sl := range s.slots {
+		active := false
+		for _, f := range []Family{Fam4, Fam6} {
+			for u := range sl.udpFlows[f] {
+				if u.isGameLike(now) {
+					active = true
+					break
+				}
+			}
+		}
+		sl.gameActive = active
+	}
 	sec := dt.Seconds()
 	for i, sl := range slots {
 		in, out, ok := samples[i].in, samples[i].out, samples[i].ok
@@ -429,7 +458,11 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 		if s.auto {
 			load = sl.busy(f)
 		}
-		if score := float64(load+1) / sl.weight[f]; score < bestScore {
+		score := float64(load+1) / sl.weight[f]
+		if s.gameMode && sl.gameActive && len(pool) > 1 {
+			score += 1000
+		}
+		if score < bestScore {
 			best, bestScore = sl, score
 		}
 	}

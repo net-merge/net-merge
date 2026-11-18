@@ -492,3 +492,29 @@ func TestUpdateDropsVanishedWhenIdle(t *testing.T) {
 		t.Fatal("NIC should be dropped once idle")
 	}
 }
+
+func TestGameModeSteersNewFlows(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4)
+	for i := 0; i < 12; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 20; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive")
+	}
+	for i := 0; i < 10; i++ {
+		got := s.Acquire(nil)
+		if got == nil || got.Name != "eth1" {
+			t.Fatalf("got %v", got)
+		}
+		s.Release(got)
+	}
+}
