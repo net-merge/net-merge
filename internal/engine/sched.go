@@ -147,7 +147,7 @@ type Scheduler struct {
 	limits map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
 	now    func() time.Time
 
-	saver    atomic.Bool // phone saver, see phone.go
+	coolOn   atomic.Bool // phone cooling, opt-in, see phone.go
 	coolMbps float64     // what a phone is held to after heavy use, 0 = never
 }
 
@@ -433,7 +433,7 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	if len(pool) == 0 {
 		return nil
 	}
-	pool = s.standby(pool)
+	pool = s.standby(pool, f)
 	// Random start so ties don't resonate with the arrival pattern (a rotating counter can
 	// lock onto e.g. "every third flow is a short DNS-like one" and starve an adapter).
 	start := rand.IntN(len(pool))

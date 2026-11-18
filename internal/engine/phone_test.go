@@ -1,33 +1,91 @@
 package engine
 
 import (
+	"net"
 	"testing"
 	"time"
 
 	"net-merge/internal/nics"
 )
 
-// wifiAndPhone is a scheduler with the saver on, a Wi-Fi link and an iPhone hotspot.
-func wifiAndPhone() (s *Scheduler, wifi, phone *Slot) {
+// wifiAndPhone is a scheduler with a Wi-Fi link and an iPhone hotspot whose IPv4 speed has been
+// measured at these Mbit/s (0 = not measured yet). Cooling is off, as it is by default.
+func wifiAndPhone(wifiMbit, phoneMbit float64) (s *Scheduler, wifi, phone *Slot) {
 	p := nic("iPhone", "172.20.10.2", 1)
 	p.Phone = true
 	s = NewScheduler([]nics.Nic{nic("Wi-Fi", "10.0.0.1", 1), p})
-	s.SetPhoneSaver(true)
-	return s, s.slots[0], s.slots[1]
+	wifi, phone = s.slots[0], s.slots[1]
+	wifi.peak[Fam4], phone.peak[Fam4] = wifiMbit*bytesPerMbit, phoneMbit*bytesPerMbit
+	return s, wifi, phone
 }
 
-func TestLightTrafficStaysOffThePhone(t *testing.T) {
-	s, wifi, _ := wifiAndPhone()
-	for i := range 20 { // one flow at a time: a mail check, a chat message, a DNS lookup
-		if got := s.Acquire(nil); got != wifi {
-			t.Fatalf("flow %d went to %s while Wi-Fi was idle", i, got.Name)
-		}
-		s.Release(wifi)
+// lone opens n flows one after the other, each closed before the next: a mail check, a chat
+// message, a single-connection download.
+func lone(s *Scheduler, f Family, n int) []*Slot {
+	out := make([]*Slot, n)
+	for i := range out {
+		out[i] = s.AcquireFor(f, nil)
+		s.ReleaseFor(out[i], f)
+	}
+	return out
+}
+
+func TestStandbyOnlyWhenItCostsNoSpeed(t *testing.T) {
+	for _, c := range []struct {
+		name           string
+		wifi, phone    float64
+		phoneGetsAFlow bool
+	}{
+		{"slower phone", 100, 50, false},
+		{"equally fast phone", 50, 50, false},
+		{"faster phone (5G next to slow broadband)", 10, 300, true},
+		{"phone not measured yet", 100, 0, true},
+		{"Wi-Fi not measured yet", 0, 50, true},
+		{"neither measured yet", 0, 0, true},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			s, _, _ := wifiAndPhone(c.wifi, c.phone)
+			got := countBy(lone(s, Fam4, 40), "iPhone")
+			if c.phoneGetsAFlow && got == 0 {
+				t.Fatal("the phone got none of 40 lone flows: standby would cost speed here")
+			}
+			if !c.phoneGetsAFlow && got != 0 {
+				t.Fatalf("the phone got %d of 40 lone flows while Wi-Fi was idle and at least as fast", got)
+			}
+		})
+	}
+}
+
+func TestStandbyPicksOnlyLinksAtLeastAsFast(t *testing.T) {
+	p := nic("iPhone", "172.20.10.2", 1)
+	p.Phone = true
+	s := NewScheduler([]nics.Nic{nic("Fiber", "10.0.0.1", 1), nic("DSL", "10.0.1.1", 1), p})
+	s.slots[0].peak[Fam4] = 100 * bytesPerMbit
+	s.slots[1].peak[Fam4] = 5 * bytesPerMbit
+	s.slots[2].peak[Fam4] = 50 * bytesPerMbit
+	if got := countBy(lone(s, Fam4, 40), "Fiber"); got != 40 {
+		t.Fatalf("Fiber got %d of 40 lone flows: a phone on standby must not push them onto a slower link", got)
+	}
+}
+
+func TestStandbyIsPerFamily(t *testing.T) {
+	s, wifi, phone := wifiAndPhone(100, 50)
+	for _, sl := range []*Slot{wifi, phone} {
+		a := *sl.addr.Load()
+		a.ip6 = net.ParseIP("2001:db8::" + map[*Slot]string{wifi: "1", phone: "2"}[sl])
+		sl.addr.Store(&a)
+	}
+	wifi.peak[Fam6], phone.peak[Fam6] = 10*bytesPerMbit, 300*bytesPerMbit // native IPv6 is fast on the phone
+	if countBy(lone(s, Fam4, 20), "iPhone") != 0 {
+		t.Fatal("over IPv4 Wi-Fi is faster: lone flows must stay off the phone")
+	}
+	if countBy(lone(s, Fam6, 40), "iPhone") == 0 {
+		t.Fatal("over IPv6 the phone is faster: it must get its share")
 	}
 }
 
 func TestParallelFlowsStillUseThePhoneInFull(t *testing.T) {
-	s, _, _ := wifiAndPhone()
+	s, _, _ := wifiAndPhone(50, 50)
 	p := acquireN(s, 8) // a download manager: 8 connections at once
 	if w, ph := countBy(p, "Wi-Fi"), countBy(p, "iPhone"); w != 4 || ph != 4 {
 		t.Fatalf("want 4/4 once the links are busy, got Wi-Fi=%d iPhone=%d", w, ph)
@@ -40,7 +98,7 @@ func TestParallelFlowsStillUseThePhoneInFull(t *testing.T) {
 }
 
 func TestThroughputOnTheOtherLinksBringsThePhoneIn(t *testing.T) {
-	s, wifi, _ := wifiAndPhone()
+	s, wifi, _ := wifiAndPhone(50, 50)
 	wifi.rateIn[Fam4] = standbyRate // a QUIC download: data moves but no TCP flow is counted
 	p := acquireN(s, 2)
 	if countBy(p, "iPhone") != 1 {
@@ -49,7 +107,7 @@ func TestThroughputOnTheOtherLinksBringsThePhoneIn(t *testing.T) {
 }
 
 func TestPhoneIsUsedWhenItIsTheOnlyWay(t *testing.T) {
-	s, wifi, phone := wifiAndPhone()
+	s, wifi, phone := wifiAndPhone(100, 50)
 	if got := s.Acquire(map[string]struct{}{"Wi-Fi": {}}); got != phone {
 		t.Fatal("a retry that excludes Wi-Fi must fall over to the phone")
 	}
@@ -58,19 +116,6 @@ func TestPhoneIsUsedWhenItIsTheOnlyWay(t *testing.T) {
 	s.SetState(wifi, Fam4, false)
 	if got := s.Acquire(nil); got != phone {
 		t.Fatal("with Wi-Fi down the phone must carry the flow")
-	}
-}
-
-func TestSaverOffTreatsThePhoneLikeAnyLink(t *testing.T) {
-	s, _, _ := wifiAndPhone()
-	s.SetPhoneSaver(false)
-	p := make([]*Slot, 20)
-	for i := range p {
-		p[i] = s.Acquire(nil)
-		s.Release(p[i])
-	}
-	if countBy(p, "iPhone") == 0 {
-		t.Fatal("with the saver off single flows must reach the phone too")
 	}
 }
 
@@ -91,8 +136,20 @@ func coolOf(s *Scheduler, name string) float64 {
 	return -1
 }
 
+func TestCoolingIsOffByDefault(t *testing.T) {
+	s, _, phone := wifiAndPhone(0, 0)
+	if s.PhoneCooling() {
+		t.Fatal("cooling costs speed, so it must be off unless chosen")
+	}
+	run(s, phone, 100, 3*coolBurst)
+	if phone.limitMbps() != 0 || coolOf(s, "iPhone") != 0 {
+		t.Fatal("a phone must keep its full speed while cooling is off")
+	}
+}
+
 func TestLongHeavyUseCoolsThePhone(t *testing.T) {
-	s, wifi, phone := wifiAndPhone()
+	s, wifi, phone := wifiAndPhone(0, 0)
+	s.SetPhoneCooling(true)
 
 	run(s, phone, 100, coolBurst-time.Second)
 	if phone.limitMbps() != 0 {
@@ -132,7 +189,8 @@ func TestLongHeavyUseCoolsThePhone(t *testing.T) {
 }
 
 func TestShortBurstsNeverCoolThePhone(t *testing.T) {
-	s, _, phone := wifiAndPhone()
+	s, _, phone := wifiAndPhone(0, 0)
+	s.SetPhoneCooling(true)
 	for range 30 { // a minute of work, two of rest, for an hour and a half
 		run(s, phone, 100, time.Minute)
 		run(s, phone, 0, 2*time.Minute)
@@ -143,7 +201,8 @@ func TestShortBurstsNeverCoolThePhone(t *testing.T) {
 }
 
 func TestCoolingKeepsTheLowerOfTheTwoCaps(t *testing.T) {
-	s, _, phone := wifiAndPhone()
+	s, _, phone := wifiAndPhone(0, 0)
+	s.SetPhoneCooling(true)
 	s.SetLimit("iPhone", 50)
 	run(s, phone, 50, coolBurst)
 	if got := phone.limitMbps(); got != DefaultCoolMbps {
@@ -166,13 +225,14 @@ func TestCoolingKeepsTheLowerOfTheTwoCaps(t *testing.T) {
 	}
 }
 
-func TestSaverOffOrZeroRateEndsCooling(t *testing.T) {
+func TestCoolingOffOrZeroRateEndsCooling(t *testing.T) {
 	for name, off := range map[string]func(*Scheduler){
-		"saver off": func(s *Scheduler) { s.SetPhoneSaver(false) },
-		"rate 0":    func(s *Scheduler) { s.SetCoolRate(0) },
+		"cooling off": func(s *Scheduler) { s.SetPhoneCooling(false) },
+		"rate 0":      func(s *Scheduler) { s.SetCoolRate(0) },
 	} {
 		t.Run(name, func(t *testing.T) {
-			s, _, phone := wifiAndPhone()
+			s, _, phone := wifiAndPhone(0, 0)
+			s.SetPhoneCooling(true)
 			run(s, phone, 100, coolBurst)
 			if phone.limitMbps() == 0 {
 				t.Fatal("setup: the phone should be cooling")
@@ -191,7 +251,10 @@ func TestSaverOffOrZeroRateEndsCooling(t *testing.T) {
 }
 
 func TestIdlePhoneIsProbedRarely(t *testing.T) {
-	s, wifi, phone := wifiAndPhone()
+	s, wifi, phone := wifiAndPhone(0, 0)
+	if s.PhoneCooling() {
+		t.Fatal("setup: gentle probes must not need the cooling opt-in")
+	}
 	clock := time.Unix(1000, 0)
 	s.now = func() time.Time { return clock }
 	due := func() map[*Slot]bool {
@@ -250,31 +313,20 @@ func TestIdlePhoneIsProbedRarely(t *testing.T) {
 	if !due()[phone] {
 		t.Fatal("a dead phone must be probed often")
 	}
-
-	s.SetState(phone, Fam4, true)
-	s.SetPhoneSaver(false)
-	clock = clock.Add(probeEveryUp)
-	if !due()[phone] {
-		t.Fatal("with the saver off the phone is probed like any link")
-	}
 }
 
 func TestPhoneKeepAliveIsLonger(t *testing.T) {
-	s, wifi, phone := wifiAndPhone()
+	s, wifi, phone := wifiAndPhone(0, 0)
 	if got := s.keepAlive(wifi); got != linkKeepAlive {
 		t.Fatalf("Wi-Fi keep-alive %s, want %s", got, linkKeepAlive)
 	}
 	if got := s.keepAlive(phone); got != phoneKeepAlive {
-		t.Fatalf("phone keep-alive %s, want %s", got, phoneKeepAlive)
-	}
-	s.SetPhoneSaver(false)
-	if got := s.keepAlive(phone); got != linkKeepAlive {
-		t.Fatalf("saver off: phone keep-alive %s, want %s", got, linkKeepAlive)
+		t.Fatalf("phone keep-alive %s with cooling off, want %s", got, phoneKeepAlive)
 	}
 }
 
 func TestUpdateFollowsThePhoneMark(t *testing.T) {
-	s, _, phone := wifiAndPhone()
+	s, _, phone := wifiAndPhone(0, 0)
 	// The same adapter name on another network: no longer a phone.
 	s.Update([]nics.Nic{nic("Wi-Fi", "10.0.0.1", 1), nic("iPhone", "192.168.1.7", 1)})
 	if phone.phone.Load() {
@@ -291,7 +343,9 @@ func TestPhoneStandbyThroughTheProxy(t *testing.T) {
 	phone := nic("iPhone", "127.0.0.3", 1)
 	phone.Phone = true
 	sched, proxy := startProxy(t, []nics.Nic{nic("Wi-Fi", "127.0.0.2", 1), phone})
-	sched.SetPhoneSaver(true)
+	sched.mu.Lock()
+	sched.slots[0].peak[Fam4], sched.slots[1].peak[Fam4] = 100*bytesPerMbit, 50*bytesPerMbit
+	sched.mu.Unlock()
 
 	idle := func() bool {
 		for _, st := range sched.Snapshot() {

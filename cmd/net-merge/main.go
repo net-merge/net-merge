@@ -38,7 +38,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge version
 
 Flags for run/socks: -include "WiFi,Ethernet 3"  -weight "Name=3"  -auto-weight=false  -stats 5s
-Phone hotspots: -phone-saver=false (use a phone like any other link)  -phone-cool 20  -phone "Name"
+Phone hotspots: -phone-cooling (slow a phone down after long heavy use)  -phone-cool 20  -phone "Name"
 `
 
 type weightFlags map[string]float64
@@ -69,8 +69,31 @@ type common struct {
 	mtu      int
 	pprof    string
 	phones   string
-	saver    bool
+	cooling  optBool
 	cool     float64
+}
+
+// optBool is a bool flag that remembers whether it was given, so a saved choice applies unless
+// the command line says otherwise.
+type optBool struct{ set, val bool }
+
+func (b *optBool) String() string   { return strconv.FormatBool(b.val) }
+func (b *optBool) IsBoolFlag() bool { return true }
+func (b *optBool) Set(v string) error {
+	val, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	b.set, b.val = true, val
+	return nil
+}
+
+// or is the flag's value if it was given, else def.
+func (b *optBool) or(def bool) bool {
+	if b.set {
+		return b.val
+	}
+	return def
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -82,8 +105,8 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.BoolVar(&c.auto, "auto-weight", true, "weight adapters by measured throughput (off when -weight is given)")
 	fs.StringVar(&c.ipv6, "ipv6", "auto", "auto: IPv6 only if every adapter has it (else apps use IPv4 on all adapters); on: always; off: never")
 	fs.IntVar(&c.mtu, "mtu", tun.DefaultMTU, "MTU of the virtual adapter (1280-65535); larger means fewer packets and less CPU")
-	fs.BoolVar(&c.saver, "phone-saver", true, "go easy on phone hotspots so the phone stays cool: light traffic stays off them and long heavy use is held to -phone-cool")
-	fs.Float64Var(&c.cool, "phone-cool", engine.DefaultCoolMbps, "Mbit/s a phone hotspot is held to after 3 minutes of heavy use, until it has had a rest (0 = never held back)")
+	fs.Var(&c.cooling, "phone-cooling", "hold a phone hotspot to -phone-cool after 3 minutes of heavy use, until it has had a rest (default: the tray's saved choice, off unless ticked)")
+	fs.Float64Var(&c.cool, "phone-cool", engine.DefaultCoolMbps, "Mbit/s a phone hotspot is held to by -phone-cooling (0 = never held back)")
 	fs.StringVar(&c.phones, "phone", "", "comma-separated adapters to treat as phone hotspots, besides the iPhones net-merge recognises by itself")
 	fs.StringVar(&c.pprof, "pprof", "", "serve Go's profiler on this loopback address, e.g. 127.0.0.1:6060")
 	fs.StringVar(&c.logFile, "log", "", "write output to this file instead of the console")
@@ -161,7 +184,11 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	}
 	sched := engine.NewScheduler(nics)
 	sched.SetAuto(c.auto && len(c.weights) == 0)
-	sched.SetPhoneSaver(c.saver)
+	settings, err := state.LoadSettings(c.stateDir)
+	if err != nil {
+		logx.Printf("warning: %v (ignored)\n", err) // a bad settings file must not stop merging
+	}
+	sched.SetPhoneCooling(c.cooling.or(settings.PhoneCooling))
 	sched.SetCoolRate(c.cool)
 	if limits, err := state.LoadLimits(c.stateDir); err != nil {
 		logx.Printf("warning: %v (ignored)\n", err) // a bad limits file must not stop merging

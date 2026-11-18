@@ -5,23 +5,24 @@ import (
 	"time"
 )
 
-// Phone saver. To the scheduler a phone sharing its mobile data is a link like any other, so it
-// gets its share of every flow, its radio never goes quiet, and during a long download it runs
-// flat out for as long as the download lasts. A phone has no fan: that is what makes it hot.
-// With the saver on, a phone link is treated differently in four ways:
+// Phones. To the scheduler a phone sharing its mobile data is a link like any other, so its
+// radio is woken by every probe and keep-alive and by any flow that lands on it. A phone has no
+// fan, and a radio that never rests is what makes it warm. For a link marked as a phone
+// (nics.Nic.Phone), three things always apply, because none of them costs any speed:
 //
-//   - Standby. While the other links have room, new flows stay off the phone (see standby), so
-//     a mail check or a chat message does not wake the mobile radio. As soon as several flows
-//     run at once, which is when a second link adds speed, the phone gets its normal share.
-//   - Cooling. After coolBurst of heavy use the phone is held to the cool rate until it has
-//     had a rest (see cool). Short downloads still get its full speed.
 //   - Probes. A phone that is up is probed every probeEveryPhone instead of every 15 s, and not
-//     at all while traffic keeps arriving over it, which proves the same thing.
+//     at all while traffic keeps arriving over it, which proves the same thing. A connection
+//     that times out brings the probe forward (see Suspect).
 //   - Keep-alives. Idle connections pinned to the phone are kept alive every phoneKeepAlive
 //     instead of every 30 s.
+//   - Standby. While the other links have room and are at least as fast as the phone, new flows
+//     stay off it, so a mail check or a chat message does not wake its radio (see standby). A
+//     phone that is faster, or not measured yet, gets its normal share.
 //
-// None of this needs anything from the phone: it cannot report its temperature to the computer,
-// so the saver limits what causes the heat instead of measuring it.
+// Cooling is opt-in (SetPhoneCooling, off by default): after coolBurst of heavy use a phone is
+// held to the cool rate until it has had a rest (see cool). It costs speed, so it is the user's
+// choice. The phone cannot report its temperature to the computer, so all of this limits what
+// causes the heat instead of measuring it.
 const (
 	// standbyFlows and standbyRate say when the other links count as busy: this many flows
 	// moving data or connecting, or this much throughput (bytes/s, 1 Mbit/s). The rate is there
@@ -45,9 +46,9 @@ const (
 	linkKeepAlive   = 30 * time.Second
 )
 
-// SetPhoneSaver switches the phone saver on or off. Off, a phone is a link like any other.
-func (s *Scheduler) SetPhoneSaver(on bool) { s.saver.Store(on) }
-func (s *Scheduler) PhoneSaver() bool      { return s.saver.Load() }
+// SetPhoneCooling switches cooling on or off. Off (the default), a phone keeps its full speed.
+func (s *Scheduler) SetPhoneCooling(on bool) { s.coolOn.Store(on) }
+func (s *Scheduler) PhoneCooling() bool      { return s.coolOn.Load() }
 
 // SetCoolRate sets what a phone is held to after coolBurst of heavy use, in Mbit/s. 0 never
 // holds it back.
@@ -57,37 +58,51 @@ func (s *Scheduler) SetCoolRate(mbitPerSec float64) {
 	s.mu.Unlock()
 }
 
-// saving reports whether the saver applies to this link. Lock-free, for the data path.
-func (s *Scheduler) saving(sl *Slot) bool { return sl.phone.Load() && s.saver.Load() }
+// CoolRate is the rate SetCoolRate set, in Mbit/s.
+func (s *Scheduler) CoolRate() float64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.coolMbps
+}
 
 // keepAlive is the TCP keep-alive period for an upstream socket on this link.
 func (s *Scheduler) keepAlive(sl *Slot) time.Duration {
-	if s.saving(sl) {
+	if sl.phone.Load() {
 		return phoneKeepAlive
 	}
 	return linkKeepAlive
 }
 
-// standby takes the phones out of a pool while the other links in it have room. With only
-// phones in the pool, or once the others are busy, the pool is returned as it is: weighted
-// least-busy then evens the flows out, so parallel downloads still use every link in full.
-// The caller holds s.mu.
-func (s *Scheduler) standby(pool []*Slot) []*Slot {
-	if !s.saver.Load() {
+// standby takes the phones out of a pool for a new flow of family f, but only when that costs
+// no speed: the phones have been measured, and other links in the pool are at least as fast as
+// the fastest of them and have room. The flow then goes to one of those links. Otherwise the
+// pool is returned as it is, so a phone that is faster than the line it is paired with (5G next
+// to slow broadband) still gets single-connection downloads, and once the other links are busy
+// weighted least-busy evens the flows out over every link. The caller holds s.mu.
+func (s *Scheduler) standby(pool []*Slot, f Family) []*Slot {
+	var phone float64
+	phones := 0
+	for _, sl := range pool {
+		if sl.phone.Load() {
+			phone = math.Max(phone, sl.peak[f])
+			phones++
+		}
+	}
+	if phones == 0 || phones == len(pool) || phone < minMeasuredPeak {
 		return pool
 	}
 	var others []*Slot
 	var busy int64
 	var rate float64
 	for _, sl := range pool {
-		if sl.phone.Load() {
+		if sl.phone.Load() || sl.peak[f] < phone {
 			continue
 		}
 		others = append(others, sl)
 		busy += sl.busy(Fam4) + sl.busy(Fam6)
 		rate += sl.rate()
 	}
-	if len(others) == 0 || len(others) == len(pool) || busy >= standbyFlows || rate >= standbyRate {
+	if len(others) == 0 || busy >= standbyFlows || rate >= standbyRate {
 		return pool
 	}
 	return others
@@ -99,13 +114,13 @@ func (sl *Slot) rate() float64 {
 	return sl.rateIn[Fam4] + sl.rateOut[Fam4] + sl.rateIn[Fam6] + sl.rateOut[Fam6]
 }
 
-// cool keeps a phone from working flat out for long. Each tick above the cool rate adds to the
-// link's heat and each tick below it takes half as much away. At coolBurst the link is capped
-// at the cool rate, and the cap goes once half of the heat is gone. A long download therefore
-// gets the phone's full speed for the first minutes and the cool rate after that, and a phone
-// that had a rest gets its burst back. The caller holds s.mu.
+// cool keeps a phone from working flat out for long, when cooling is on. Each tick above the
+// cool rate adds to the link's heat and each tick below it takes half as much away. At coolBurst
+// the link is capped at the cool rate, and the cap goes once half of the heat is gone. A long
+// download therefore gets the phone's full speed for the first minutes and the cool rate after
+// that, and a phone that had a rest gets its burst back. The caller holds s.mu.
 func (s *Scheduler) cool(sl *Slot, dt time.Duration) {
-	if !sl.present || !s.saving(sl) || s.coolMbps <= 0 {
+	if !sl.present || !sl.phone.Load() || !s.coolOn.Load() || s.coolMbps <= 0 {
 		if sl.heat != 0 || sl.cooling {
 			sl.heat, sl.cooling = 0, false
 			s.applyLimit(sl)
@@ -146,9 +161,9 @@ func (s *Scheduler) applyLimit(sl *Slot) {
 	}
 }
 
-// Suspect asks for a fresh probe of a link on which a connection just timed out. A phone on
-// standby is probed rarely, and without this a phone that lost its signal would keep making
-// new connections wait for the connect timeout until its next probe.
+// Suspect asks for a fresh probe of a link on which a connection just timed out. A phone is
+// probed rarely, and without this a phone that lost its signal would keep making new
+// connections wait for the connect timeout until its next probe.
 func (s *Scheduler) Suspect(sl *Slot, f Family) {
 	s.mu.Lock()
 	defer s.mu.Unlock()

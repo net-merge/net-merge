@@ -6,16 +6,18 @@ entry here before pushing a version tag.
 ## [Unreleased]
 
 ### Added
-- **net-merge goes easy on an iPhone hotspot, so the phone does not run hot.** A phone that shares its
-  mobile data used to get a share of every connection and ran at full speed for as long as a download
-  lasted. Now small things stay on your other connections while they have room, and the phone joins in
-  when several connections are busy at once. A long download gets the phone's full speed for 3 minutes,
-  then 20 Mbit/s until the phone has had a rest; the menu shows *cooling at 20 Mbit/s* while that
-  lasts. An idle phone is also checked for internet every 2 minutes instead of every 15 seconds, so its
-  mobile radio can sleep. An iPhone is recognised by itself over USB and Wi-Fi. Untick *Go easy on
-  phone hotspots* in the menu (or start with `-phone-saver=false`) to use the phone's full speed all
-  the time, `-phone-cool 10` changes the 20, and `-phone "Name"` treats another adapter (for example an
-  Android phone) the same way.
+- **An iPhone hotspot gets more rest, with no loss of speed.** net-merge now recognises an iPhone
+  sharing its connection, over USB or Wi-Fi, and lets its mobile radio sleep more: it checks the phone
+  for internet every 2 minutes instead of every 15 seconds (and not at all while data is arriving over
+  it), keeps idle connections on it alive every 2 minutes instead of every 30 seconds, and sends single
+  connections (a mail check, a chat message) to your other connection when that one is at least as fast
+  and not busy. A phone that is faster than your other connection keeps getting them. `net-merge list`
+  shows *(phone hotspot)*, and `-phone "Name"` treats another adapter (for example an Android phone)
+  the same way.
+- **Cool down phone hotspots**, a new menu item, off unless you tick it. When ticked, a phone that has
+  worked at full speed for 3 minutes is held at 20 Mbit/s until it has had a rest, so it stays cooler;
+  the menu shows *cooling at 20 Mbit/s* while that lasts. The choice is remembered, also when net-merge
+  starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
 
 ## [0.3.7] - 2026-11-09
 

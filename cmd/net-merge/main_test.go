@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"strings"
 	"testing"
 	"time"
@@ -114,5 +115,27 @@ func TestFormatNICsShowsACoolingPhone(t *testing.T) {
 	}})
 	if !strings.Contains(out, "phone  cooling at 20 Mbit/s") {
 		t.Fatalf("want the phone mark and the cool rate, got:\n%s", out)
+	}
+}
+
+func TestPhoneCoolingFlagFallsBackToTheSavedChoice(t *testing.T) {
+	for _, c := range []struct {
+		args        []string
+		saved, want bool
+	}{
+		{nil, false, false}, // the default: off
+		{nil, true, true},   // ticked in the tray, started at sign-in without flags
+		{[]string{"-phone-cooling"}, false, true},
+		{[]string{"-phone-cooling=false"}, true, false}, // the command line wins for this run
+	} {
+		fs := flag.NewFlagSet("t", flag.ContinueOnError)
+		var com common
+		com.register(fs)
+		if err := fs.Parse(c.args); err != nil {
+			t.Fatal(err)
+		}
+		if got := com.cooling.or(c.saved); got != c.want {
+			t.Errorf("%v with saved=%v: cooling %v, want %v", c.args, c.saved, got, c.want)
+		}
 	}
 }
