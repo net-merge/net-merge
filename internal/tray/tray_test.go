@@ -23,6 +23,22 @@ func TestShortenCountsUTF16AndKeepsRunesWhole(t *testing.T) {
 	}
 }
 
+func TestAdapterRowKeepsLiveDetailsWithAliasAndISP(t *testing.T) {
+	s := engine.SlotStats{Name: "Ethernet 5", LinkIn: 12.3 * 125000, LinkOut: 1.2 * 125000, State: "up", State6: "up", Active: 7, LimitMbps: 20}
+	got := adapterRow(s, true, "Home", "Example ISP")
+	for _, text := range []string{"Home · Example ISP", "↓12", "↑1.2", "limit 20 Mbit/s", "7 flows", "+IPv6"} {
+		if !strings.Contains(got, text) {
+			t.Errorf("%q missing from %q", text, got)
+		}
+	}
+	if strings.Contains(adapterRow(s, false, "", ""), "flows") {
+		t.Fatal("paused row reported relayed flows")
+	}
+	if s.Name != "Ethernet 5" {
+		t.Fatal("row formatting renamed the scheduling identity")
+	}
+}
+
 func TestVersionLabel(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"0.3.3", "v0.3.3"},
