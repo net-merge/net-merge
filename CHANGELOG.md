@@ -5,6 +5,11 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Added
+- Wi-Fi, Ethernet, phone/USB tether and generic adapter icons in the existing Windows, macOS and Linux tray menus.
+- Optional ISP names in adapter rows. Enable **Show ISP names (online lookup)** in the tray; it is off by default.
+- `net-merge alias <adapter> [name]` sets or removes a display name, shown in the tray, `status` and `list`.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed

@@ -50,6 +50,16 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 |---|---|---|
 | ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: total, each adapter's speed and flows, IPv6 option, Pause merging, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause merging, Quit](docs/tray-menu-macos.png) |
 
+## Adapter icons and names
+
+The tray menu shows a Wi-Fi, Ethernet, phone/USB tether or generic icon beside each adapter.
+**Show ISP names (online lookup)** is off by default. If enabled, it asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. To retry a failed lookup, turn the option off and on.
+
+Give an adapter a display name with `net-merge alias "Ethernet 5" "Home connection"`.
+Remove it with `net-merge alias "Ethernet 5"`. The name appears in the tray, `status` and `list`;
+the Windows/macOS/Linux interface name and connection balancing stay the same. Add `-state-dir <dir>`
+before the adapter name if you run net-merge with a custom state directory.
+
 ## How it helps
 
 net-merge gives every new connection to one of your links. When an app opens many connections, they
