@@ -85,12 +85,26 @@ func (s *Scheduler) probeDue() []probeJob {
 				every = 0
 			case stateDown:
 				every = probeEveryDown
+			case stateUp:
+				// A probe wakes a phone's mobile radio, which then stays on for seconds. So a
+				// phone that is up is probed rarely, and not at all while traffic arrives over
+				// it: that proves as much as a probe does. A timed-out connection brings the
+				// probe forward (see Suspect).
+				if sl.phone.Load() && !sl.suspect[f] {
+					every = probeEveryPhone
+				}
 			}
-			if now.Sub(sl.lastProbe[f]) >= every {
-				sl.lastProbe[f] = now
-				sl.probing[f].Store(true)
-				due = append(due, probeJob{sl, f})
+			if now.Sub(sl.lastProbe[f]) < every {
+				continue
 			}
+			in := sl.bytesIn[f].Load()
+			arrived := in != sl.probeIn[f]
+			sl.lastProbe[f], sl.probeIn[f], sl.suspect[f] = now, in, false
+			if every == probeEveryPhone && arrived {
+				continue
+			}
+			sl.probing[f].Store(true)
+			due = append(due, probeJob{sl, f})
 		}
 	}
 	return due

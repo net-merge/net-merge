@@ -15,6 +15,7 @@ type Nic struct {
 	IP     net.IP
 	IP6    net.IP
 	Weight float64
+	Phone  bool // a phone sharing its mobile data: the scheduler goes easy on it (see engine/phone.go)
 }
 
 // Skip is an adapter that was seen but not used, with the reason (shown by `net-merge list`).
@@ -27,6 +28,21 @@ var (
 	virtualName = regexp.MustCompile(`(?i)loopback|vethernet|wsl|tailscale|zerotier|wintun|net-merge|docker|podman|^veth|^virbr|^br-|^vboxnet|^vmnet|^vnet\d|^lxc|^lxdbr|^cni|^flannel|^wg\d|^tun\d|^tap\d|^zt`)
 	virtualDesc = regexp.MustCompile(`(?i)virtual|vpn|\btap\b|tap-|tunnel|wintun|wireguard|tailscale|zerotier|openvpn|anyconnect|fortinet|vmware|npcap|miniport|teredo|isatap|6to4|pseudo`)
 )
+
+// An iPhone or iPad sharing its connection. Personal Hotspot always hands out an address in
+// 172.20.10.0/28 with a /28 mask, over USB, Wi-Fi and Bluetooth alike, so the address finds it on
+// every OS and with -include (which skips the adapter details). Both have to match: office and
+// campus networks on 172.20.0.0/16 can hand out 172.20.10.x too, but not with a /28. The
+// description catches a tether that has no IPv4 address yet: "iPhone USB" on macOS, "Apple Mobile
+// Device Ethernet" on Windows, the ipheth driver on Linux.
+var (
+	iosHotspot = net.IPNet{IP: net.IPv4(172, 20, 10, 0).To4(), Mask: net.CIDRMask(28, 32)}
+	iosDesc    = regexp.MustCompile(`(?i)iphone|ipad|apple mobile device|^ipheth$`)
+)
+
+func isPhone(ip4 net.IP, maskBits int, desc string) bool {
+	return (ip4 != nil && maskBits == 28 && iosHotspot.Contains(ip4)) || iosDesc.MatchString(desc)
+}
 
 func DiscoverNics(include []string, weights map[string]float64) ([]Nic, error) {
 	nics, _, err := DiscoverNicsDetailed(include, weights)
@@ -74,6 +90,7 @@ func DiscoverNicsDetailed(include []string, weights map[string]float64) ([]Nic, 
 			continue
 		}
 		var ip4, ip6 net.IP
+		var ip4Bits int
 		for _, a := range addrs {
 			ipn, ok := a.(*net.IPNet)
 			if !ok {
@@ -82,11 +99,17 @@ func DiscoverNicsDetailed(include []string, weights map[string]float64) ([]Nic, 
 			if v4 := ipn.IP.To4(); v4 != nil {
 				if ip4 == nil && !v4.IsLinkLocalUnicast() { // 169.254/16: no DHCP lease, no internet
 					ip4 = v4
+					ones, bits := ipn.Mask.Size()
+					if bits == 128 { // an IPv4 address with a 16-byte mask
+						ones -= 96
+					}
+					ip4Bits = ones
 				}
 			} else if ip6 == nil && ipn.IP.IsGlobalUnicast() && !ipn.IP.IsPrivate() { // skips fe80:: and ULA
 				ip6 = ipn.IP
 			}
 		}
+		phone := isPhone(ip4, ip4Bits, ai.desc)
 		if info != nil {
 			if !ai.v4 {
 				ip4 = nil
@@ -107,7 +130,7 @@ func DiscoverNicsDetailed(include []string, weights map[string]float64) ([]Nic, 
 		if v, ok := weights[ifc.Name]; ok {
 			w = v
 		}
-		out = append(out, Nic{Name: ifc.Name, Index: ifc.Index, IP: ip4, IP6: ip6, Weight: w})
+		out = append(out, Nic{Name: ifc.Name, Index: ifc.Index, IP: ip4, IP6: ip6, Weight: w, Phone: phone})
 	}
 	return out, skipped, nil
 }

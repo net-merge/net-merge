@@ -153,7 +153,7 @@ func (b *Balancer) DialTCP(ctx context.Context, host string, port int) (net.Conn
 			LocalAddr: &net.TCPAddr{IP: sl.ip(f)},            // binding the source IP pins the flow to this NIC
 			Control:   nics.ForceEgress(sl.Index, f == Fam6), // and this forces egress even if the TUN's routes match
 			Timeout:   b.ConnectTimeout,
-			KeepAlive: 30 * time.Second,
+			KeepAlive: b.S.keepAlive(sl),
 		}
 		conn, err := d.DialContext(ctx, network, net.JoinHostPort(host, strconv.Itoa(port)))
 		if err == nil {
@@ -163,6 +163,8 @@ func (b *Balancer) DialTCP(ctx context.Context, host string, port int) (net.Conn
 		c := classify(err)
 		if c.linkDown {
 			b.S.Fail(sl, f, b.FailCooldown)
+		} else if c.retry {
+			b.S.Suspect(sl, f)
 		}
 		rep, lastErr = c.rep, err
 		if !c.retry || ctx.Err() != nil {

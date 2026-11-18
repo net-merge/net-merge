@@ -49,12 +49,17 @@ type Slot struct {
 	bytesIn, bytesOut     [2]atomic.Int64
 	probing               [2]atomic.Bool
 	limit                 atomic.Pointer[limitPair] // nil = unlimited; see limit.go
+	phone                 atomic.Bool               // a phone sharing its mobile data; see phone.go
 
 	// guarded by Scheduler.mu
 	weight          [2]float64
 	present         bool
 	state           [2]linkState
 	lastProbe       [2]time.Time
+	probeIn         [2]int64 // bytesIn at the last probe or look, see probeDue
+	suspect         [2]bool  // a connection timed out: probe now, see Suspect
+	heat            time.Duration
+	cooling         bool // held at the cool rate, see cool
 	downUntil       [2]time.Time
 	lastIn, lastOut [2]int64
 	rateIn, rateOut [2]float64 // bytes/s over the last tick
@@ -128,6 +133,8 @@ type SlotStats struct {
 	LinkIn, LinkOut   float64 // through the adapter by any app, from the OS's counters (bytes/s)
 	Peak, Peak6       float64
 	LimitMbps         float64 // cap in Mbit/s, 0 = unlimited
+	Phone             bool    // a phone sharing its mobile data
+	CoolMbps          float64 // Mbit/s the phone saver holds it to right now, 0 = not held
 }
 
 // Scheduler uses weighted least-busy-flows per address family. Automatic mode
@@ -139,10 +146,13 @@ type Scheduler struct {
 	auto   bool
 	limits map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
 	now    func() time.Time
+
+	coolOn   atomic.Bool // phone cooling, opt-in, see phone.go
+	coolMbps float64     // what a phone is held to after heavy use, 0 = never
 }
 
 func NewScheduler(nics []nics.Nic) *Scheduler {
-	s := &Scheduler{now: time.Now}
+	s := &Scheduler{now: time.Now, coolMbps: DefaultCoolMbps}
 	s.Update(nics)
 	return s
 }
@@ -169,7 +179,7 @@ func (s *Scheduler) SetLimit(name string, mbitPerSec float64) {
 	}
 	for _, sl := range s.slots {
 		if sl.key == name {
-			sl.setLimit(mbitPerSec)
+			s.applyLimit(sl)
 		}
 	}
 }
@@ -185,7 +195,7 @@ func (s *Scheduler) SetLimits(limits map[string]float64) {
 		}
 	}
 	for _, sl := range s.slots {
-		sl.setLimit(s.limits[sl.key])
+		s.applyLimit(sl)
 	}
 }
 
@@ -232,11 +242,13 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 		if found == nil {
 			sl := &Slot{Name: n.Name, Index: n.Index, key: n.Name, weight: [2]float64{n.Weight, n.Weight}, present: true}
 			sl.addr.Store(na)
-			sl.setLimit(s.limits[n.Name])
+			sl.phone.Store(n.Phone)
+			s.applyLimit(sl)
 			s.slots = append(s.slots, sl)
 			continue
 		}
 		found.present = true
+		found.phone.Store(n.Phone)
 		if !s.auto {
 			found.weight = [2]float64{n.Weight, n.Weight}
 		}
@@ -377,6 +389,9 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			}
 		}
 	}
+	for _, sl := range s.slots {
+		s.cool(sl, dt)
+	}
 }
 
 // Acquire picks an IPv4 NIC for a new flow, skipping the ones in skip. The caller must Release it.
@@ -418,6 +433,7 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	if len(pool) == 0 {
 		return nil
 	}
+	pool = s.standby(pool, f)
 	// Random start so ties don't resonate with the arrival pattern (a rotating counter can
 	// lock onto e.g. "every third flow is a short DNS-like one" and starve an adapter).
 	start := rand.IntN(len(pool))
@@ -513,7 +529,10 @@ func (s *Scheduler) Snapshot() []SlotStats {
 			RateIn:   sl.rateIn[Fam4] + sl.rateIn[Fam6], RateOut: sl.rateOut[Fam4] + sl.rateOut[Fam6],
 			LinkIn: sl.linkRateIn, LinkOut: sl.linkRateOut,
 			Peak: sl.peak[Fam4], Peak6: sl.peak[Fam6],
-			LimitMbps: sl.limitMbps(),
+			LimitMbps: s.limits[sl.key], Phone: sl.phone.Load(),
+		}
+		if sl.cooling && (st.LimitMbps <= 0 || s.coolMbps < st.LimitMbps) {
+			st.CoolMbps = s.coolMbps
 		}
 		if a.ip4 != nil {
 			st.IP, st.State = a.ip4.String(), sl.state[Fam4].String()
