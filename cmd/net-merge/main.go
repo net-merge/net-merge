@@ -30,6 +30,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge status     show whether it is on, and per-adapter load
   net-merge limit <adapter> <Mbit/s>   cap an adapter (0 or unlimited removes the cap)
   net-merge limit      list the saved speed limits
+  net-merge alias <adapter> [name]   set a display name (omit name to remove it)
   net-merge socks      plain SOCKS5 proxy on 127.0.0.1:1080 (no admin, per-app)
   net-merge list       show detected adapters
   net-merge autostart on|off|status   start the tray at sign-in (Windows: no UAC prompt)
@@ -185,8 +186,11 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	return sched, bal, nil
 }
 
-func describeNic(n nics.Nic) string {
+func describeNic(n nics.Nic, aliases ...map[string]string) string {
 	s := n.Name
+	if len(aliases) != 0 {
+		s = state.AdapterLabel(s, aliases[0])
+	}
 	if n.IP != nil {
 		s += "  v4 " + n.IP.String()
 	}
@@ -196,7 +200,7 @@ func describeNic(n nics.Nic) string {
 	return s
 }
 
-func formatNICs(snap []engine.SlotStats) string {
+func formatNICs(snap []engine.SlotStats, aliases ...map[string]string) string {
 	var sb strings.Builder
 	for _, s := range snap {
 		gone := ""
@@ -209,8 +213,12 @@ func formatNICs(snap []engine.SlotStats) string {
 		if s.LimitMbps > 0 {
 			lim = "  limit " + limitPhrase(s.LimitMbps)
 		}
+		name := s.Name
+		if len(aliases) != 0 {
+			name = state.AdapterLabel(name, aliases[0])
+		}
 		fmt.Fprintf(&sb, "%-14s v4 %-11s v6 %-11s link down %6.1f up %5.1f Mbit/s  via net-merge %6.1f  active %3d  total %5d  w %.2f/%.2f  failed %d%s%s\n",
-			s.Name, s.State, s.State6, s.LinkIn*8/1e6, s.LinkOut*8/1e6, (s.RateIn+s.RateOut)*8/1e6, s.Active, s.Total, s.Weight, s.Weight6, s.Failed, lim, gone)
+			name, s.State, s.State6, s.LinkIn*8/1e6, s.LinkOut*8/1e6, (s.RateIn+s.RateOut)*8/1e6, s.Active, s.Total, s.Weight, s.Weight6, s.Failed, lim, gone)
 	}
 	return sb.String()
 }
@@ -265,6 +273,8 @@ func main() {
 		cmdStatus(args)
 	case "limit":
 		cmdLimit(args)
+	case "alias":
+		cmdAlias(args)
 	case "socks":
 		cmdSocks(args)
 	case "list":
@@ -297,11 +307,12 @@ func cmdList(args []string) {
 	if len(nics) == 0 {
 		fmt.Println("No usable adapters found.")
 	}
+	prefs, _ := state.LoadTrayPreferences(c.stateDir)
 	for _, n := range nics {
-		fmt.Printf("USE   %s  (index %d)\n", describeNic(n), n.Index)
+		fmt.Printf("USE   %s  (index %d)\n", describeNic(n, prefs.Aliases), n.Index)
 	}
 	for _, s := range skipped {
-		fmt.Printf("skip  %s: %s\n", s.Name, s.Reason)
+		fmt.Printf("skip  %s: %s\n", state.AdapterLabel(s.Name, prefs.Aliases), s.Reason)
 	}
 }
 
@@ -390,6 +401,11 @@ func cmdRun(args []string) {
 		case <-crash:
 			os.Exit(3) // simulates a crash: no teardown runs
 		case <-poll.C:
+			if req, ok := state.TakeAlias(c.stateDir); ok {
+				if err := state.SetAlias(c.stateDir, req.Adapter, req.Alias); err != nil {
+					logx.Printf("warning: saving alias: %v\n", err)
+				}
+			}
 			if req, ok := state.TakeLimit(c.stateDir); ok {
 				sched.SetLimit(req.Adapter, req.Mbps)
 				if err := state.SaveLimits(c.stateDir, sched.Limits()); err != nil {
@@ -449,7 +465,8 @@ func cmdStatus(args []string) {
 		fmt.Println("net-merge is OFF.")
 		return
 	}
-	fmt.Printf("net-merge is ON (%s, pid %d, up %s)\nIPv6: %s\n%s", st.Mode, st.PID, time.Since(st.Since).Truncate(time.Second), st.V6, formatNICs(st.NICs))
+	prefs, _ := state.LoadTrayPreferences(*dir)
+	fmt.Printf("net-merge is ON (%s, pid %d, up %s)\nIPv6: %s\n%s", st.Mode, st.PID, time.Since(st.Since).Truncate(time.Second), st.V6, formatNICs(st.NICs, prefs.Aliases))
 }
 
 // cmdLimit lists the saved caps, or sets one. A running instance gets the change through a marker
