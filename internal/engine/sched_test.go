@@ -1,4 +1,4 @@
-package engine
+﻿package engine
 
 import (
 	"math"
@@ -277,11 +277,11 @@ func TestProbeAgainstLocalListener(t *testing.T) {
 	probeTargets[Fam4] = []string{ln.Addr().String()}
 
 	s := NewScheduler([]nics.Nic{nic("A", "127.0.0.2", 1)})
-	if !probe(s.slots[0], Fam4) {
+	if !func() bool { ok, _ := probe(s.slots[0], Fam4); return ok }() {
 		t.Fatal("probe should pass against a reachable target")
 	}
 	ln.Close()
-	if probe(s.slots[0], Fam4) {
+	if func() bool { ok, _ := probe(s.slots[0], Fam4); return ok }() {
 		t.Fatal("probe should fail once the target is gone")
 	}
 }
@@ -492,3 +492,4 @@ func TestUpdateDropsVanishedWhenIdle(t *testing.T) {
 		t.Fatal("NIC should be dropped once idle")
 	}
 }
+
