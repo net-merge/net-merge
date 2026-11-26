@@ -350,8 +350,8 @@ func TestAutoWeightsArePerFamily(t *testing.T) {
 		sb.bytesIn[Fam6].Add(100 * mbit)
 		s.Tick(time.Second)
 	}
-	if got := sb.weight[Fam4] / sa.weight[Fam4]; got > 0.06 {
-		t.Fatalf("slow v4 path should be down-weighted to ~0.05, got ratio %.2f", got)
+	if got := sb.weight[Fam4] / sa.weight[Fam4]; got > minWeight+0.01 {
+		t.Fatalf("slow v4 path should be down-weighted to the floor, got ratio %.2f", got)
 	}
 	if got := sb.weight[Fam6] / sa.weight[Fam6]; got < 0.95 {
 		t.Fatalf("fast v6 path must keep full weight, got ratio %.2f", got)
@@ -376,7 +376,7 @@ func TestPessimisticEstimateRecoversWhileIdle(t *testing.T) {
 		sb.bytesIn[Fam4].Add(5 * mbit)
 		s.Tick(time.Second)
 	}
-	if w := sb.weight[Fam4] / sa.weight[Fam4]; w > 0.06 {
+	if w := sb.weight[Fam4] / sa.weight[Fam4]; w > minWeight+0.01 {
 		t.Fatalf("setup: B should be down-weighted, ratio %.2f", w)
 	}
 	for i := 0; i < 80; i++ { // then nobody uses B, and A keeps working

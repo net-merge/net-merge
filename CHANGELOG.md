@@ -5,6 +5,13 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Fixed
+- **Merging no longer gets stuck on one connection.** If one connection happened to carry a big
+  download while the other only loaded web pages, the second looked much slower than it was and got
+  almost no new connections, so it never showed its real speed. Merging stayed one-sided until it was
+  paused and started again. Now a connection that looks slower still gets a share of new connections,
+  so a wrong guess is corrected within seconds.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed
