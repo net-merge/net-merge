@@ -5,6 +5,12 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Changed
+- **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
+  corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or
+  dark theme, and opens in the corner by the taskbar like the Quick Settings flyout. It stays sharp at
+  any display scale and on every monitor. macOS and Linux keep their native menus.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed
