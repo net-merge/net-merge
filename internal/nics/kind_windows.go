@@ -1,6 +1,7 @@
 package nics
 
 import (
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -30,6 +31,10 @@ func AdapterKinds() map[string]Kind {
 
 func windowsKind(ifType uint32, description string) Kind {
 	switch {
+	// A Bluetooth personal-area network reports itself as Ethernet. Leave it unknown, so the menu keeps
+	// choosing its icon by name (a Bluetooth glyph on Windows 11) instead of showing a network cable.
+	case strings.Contains(strings.ToLower(description), "bluetooth"):
+		return Unknown
 	case phoneDescription(description) || ifType == 243 || ifType == 244:
 		return Phone
 	case ifType == 71:

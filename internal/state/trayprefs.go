@@ -88,8 +88,19 @@ func ValidateAlias(name, alias string) error {
 		if unicode.IsControl(r) {
 			return fmt.Errorf("adapter names and aliases cannot contain control characters")
 		}
+		if reordersText(r) {
+			return fmt.Errorf("adapter names and aliases cannot contain text-direction overrides")
+		}
 	}
 	return nil
+}
+
+// reordersText reports the characters that change how the text around them is laid out or shown: the
+// bidirectional embeddings, overrides and isolates, the line and paragraph separators and the byte-order
+// mark. An alias with one could make a menu row read as something else. The left-to-right and
+// right-to-left marks and the joiners that Persian and Indic scripts need are fine, and stay allowed.
+func reordersText(r rune) bool {
+	return r >= 0x202A && r <= 0x202E || r >= 0x2066 && r <= 0x2069 || r == 0x2028 || r == 0x2029 || r == 0xFEFF
 }
 
 // AdapterLabel preserves the system name in terminal output so it can still be
