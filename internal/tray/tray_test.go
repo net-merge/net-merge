@@ -92,3 +92,12 @@ func TestLimitTextUsesMbit(t *testing.T) {
 		t.Errorf("limitTip(0) = %q, want it to describe no cap", tip)
 	}
 }
+
+func TestCoolTipSaysItIsOptIn(t *testing.T) {
+	tip := coolTip(20)
+	for _, want := range []string{"Off:", "full speed", "20 Mbit/s", "Remembered"} {
+		if !strings.Contains(tip, want) {
+			t.Errorf("tooltip %q does not mention %q", tip, want)
+		}
+	}
+}

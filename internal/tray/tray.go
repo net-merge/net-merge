@@ -52,6 +52,7 @@ type trayUI struct {
 	limitPreset [trayRows][]*systray.MenuItem
 
 	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
+	coolItem                                         *systray.MenuItem
 	versionItem                                      *systray.MenuItem
 	rows                                             []*systray.MenuItem
 	lastOn                                           *bool
@@ -96,6 +97,7 @@ func (u *trayUI) onReady() {
 	systray.AddSeparator()
 	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
 	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.coolItem = systray.AddMenuItemCheckbox("Cool down phone hotspots", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
 	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
 	u.toggleItem = systray.AddMenuItem("Start merging", "")
 	u.versionItem = systray.AddMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
@@ -148,6 +150,19 @@ func (u *trayUI) onReady() {
 					u.v6Item.Check()
 					u.bal.SetV6Mode(engine.V6Auto)
 				}
+			case <-u.coolItem.ClickedCh:
+				on := !u.coolItem.Checked()
+				u.lastErr = ""
+				// Saved first, so the box never shows a choice that is gone after a restart.
+				if err := state.SaveSettings(u.stateDir, state.Settings{PhoneCooling: on}); err != nil {
+					u.lastErr = "cool down phone hotspots: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+				} else if on {
+					u.coolItem.Check()
+				} else {
+					u.coolItem.Uncheck()
+				}
+				u.sched.SetPhoneCooling(u.coolItem.Checked())
 			case <-u.versionItem.ClickedCh:
 				if err := platform.OpenURL(update.ReleasesURL); err != nil {
 					logx.Printf("error: opening the release page: %v\n", err)
@@ -291,6 +306,9 @@ func (u *trayUI) refresh() {
 			txt += "  limit " + limitText(s.LimitMbps)
 		}
 		if on {
+			if s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
+				txt += "  cooling at " + limitText(s.CoolMbps)
+			}
 			txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
 		}
 		if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
@@ -422,6 +440,13 @@ func shorten(s string, n int) string {
 		units += w
 	}
 	return s
+}
+
+// coolTip explains the opt-in. A phone is always checked for internet gently and kept off light
+// traffic when another link is as fast; this box only adds the slowdown, which costs speed.
+func coolTip(mbitPerSec float64) string {
+	return "Off: a phone hotspot keeps its full speed. Ticked: after 3 minutes of heavy use a phone hotspot is held at " +
+		limitText(mbitPerSec) + " until it has had a rest, so it stays cooler. Remembered after a restart."
 }
 
 // limitPresets are the caps offered in each adapter's submenu, in Mbit/s.
