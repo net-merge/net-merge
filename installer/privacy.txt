@@ -1,0 +1,15 @@
+Privacy
+
+net-merge has no accounts, analytics or telemetry. Besides passing on your own apps' traffic, it only
+connects to:
+
+  - 1.1.1.1 and 8.8.8.8 (Cloudflare and Google public DNS), port 443: a connection that sends no data,
+    to see whether each of your connections has internet.
+
+  - api.github.com: the tray reads the newest release number, at start and every 6 hours.
+
+  - ipwho.is, or ipinfo.io if that fails: the tray asks who provides each connection, to show the
+    provider's name. The service sees that connection's public IP address. This is on by default.
+    Untick "Show ISP names" on the next pages, or "Show ISP Names" in the tray menu, to stop it.
+
+Privacy policy and code signing policy: https://net-merge.org/#code-signing

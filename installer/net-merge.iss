@@ -28,6 +28,7 @@ Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
 LicenseFile=LICENSE
+InfoBeforeFile=installer\privacy.txt
 SourceDir=..
 OutputDir=dist
 OutputBaseFilename=net-merge-setup-{#Version}
@@ -40,6 +41,7 @@ UsedUserAreasWarning=no
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
+Name: "ispnames"; Description: "Show ISP names (asks ipwho.is who provides each connection)"; GroupDescription: "Privacy:"
 Name: "autostart"; Description: "Start net-merge when I sign in (no UAC prompt)"; GroupDescription: "Startup:"; Flags: unchecked
 Name: "desktopicon"; Description: "Create a &desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 
@@ -58,6 +60,8 @@ Name: "{autoprograms}\net-merge"; Filename: "{app}\net-merge-tray.exe"; IconFile
 Name: "{autodesktop}\net-merge"; Filename: "{app}\net-merge-tray.exe"; IconFilename: "{app}\net-merge.ico"; Tasks: desktopicon
 
 [Run]
+; As the signed-in user, whose settings these are. Silent installs can pass /MERGETASKS=!ispnames.
+Filename: "{app}\net-merge.exe"; Parameters: "isp-names off"; Flags: runhidden runasoriginaluser; Tasks: not ispnames
 Filename: "{app}\net-merge.exe"; Parameters: "autostart on"; Flags: runhidden; Tasks: autostart; StatusMsg: "Enabling start at sign-in..."
 ; The installer is already elevated, so the tray starts without a second UAC prompt.
 Filename: "{app}\net-merge-tray.exe"; Description: "Start net-merge now"; Flags: nowait postinstall skipifsilent

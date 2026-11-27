@@ -26,7 +26,8 @@ entry here before pushing a version tag.
   menu's own Fluent icons). The other menu rows have icons too, on macOS, Linux and Windows. It is only a picture; it never changes which adapter is used.
 - **ISP names in adapter rows.** The tray asks `ipwho.is` (or `ipinfo.io` if that fails), through each
   adapter, who provides it, and shows the short name (*Railtel*, not the registered company name). The
-  service sees that adapter's public IP address. On by default; untick *Show ISP Names* to stop it.
+  service sees that adapter's public IP address. On by default; untick *Show ISP Names* to stop it, or
+  untick it in the Windows installer, which now shows the privacy text first.
 - **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
   tray, `net-merge status` and `net-merge list` show beside the system name; balancing is unchanged.
 

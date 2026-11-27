@@ -31,6 +31,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge limit <adapter> <Mbit/s>   cap an adapter (0 or unlimited removes the cap)
   net-merge limit      list the saved speed limits
   net-merge alias <adapter> [name]   set a display name (omit name to remove it)
+  net-merge isp-names on|off   show each connection's provider in the tray (on by default)
   net-merge socks      plain SOCKS5 proxy on 127.0.0.1:1080 (no admin, per-app)
   net-merge list       show detected adapters
   net-merge autostart on|off|status   start the tray at sign-in (Windows: no UAC prompt)
@@ -340,6 +341,8 @@ func main() {
 		cmdLimit(args)
 	case "alias":
 		cmdAlias(args)
+	case "isp-names":
+		cmdISPNames(args)
 	case "socks":
 		cmdSocks(args)
 	case "list":
