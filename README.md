@@ -53,7 +53,7 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 ## Adapter icons and names
 
 The tray menu shows a Wi-Fi, Ethernet, phone/USB tether or generic icon beside each adapter.
-**Show ISP Names** is on by default. The tray asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. Untick it to stop the lookups; untick and tick it to retry a failed one. The Windows installer asks too (silent install: `/MERGETASKS=!ispnames`), and `net-merge isp-names off` does the same from a terminal.
+**Show ISP Names** is on by default. The tray asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. Untick it to stop the lookups; untick and tick it to retry a failed one. The Windows installer asks too (silent install: `/MERGETASKS=!ispnames`), and `net-merge isp-names off` does the same from a terminal (on a Mac, with `sudo`).
 
 Give an adapter a display name with `net-merge alias "Ethernet 5" "Home connection"`.
 Remove it with `net-merge alias "Ethernet 5"`. The name appears in the tray, `status` and `list`;
