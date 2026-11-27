@@ -671,3 +671,22 @@ func TestManySocketsFromOneAppPortAreNotAGame(t *testing.T) {
 		t.Fatal("a single game socket must still count")
 	}
 }
+
+// A link filled by an upload receives little more than acknowledgements, and still works.
+func TestFailedProbeIgnoredWhileUploading(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam4, true)
+	a.bytesOut[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	a.linkRateIn = 25_000 // acknowledgements, from the OS's counters
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateUp {
+		t.Fatalf("uploading link marked %q", a.state[Fam4])
+	}
+	a.linkRateIn = 0 // sending into the void: nothing comes back
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateDown {
+		t.Fatalf("link that gets nothing back left %q", a.state[Fam4])
+	}
+}

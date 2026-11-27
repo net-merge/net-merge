@@ -576,16 +576,26 @@ func (s *Scheduler) ReleaseFor(sl *Slot, f Family) {
 }
 
 // SetState records a probe result. A passing probe also clears any link-error cooldown. A failed
-// one is ignored while data is still arriving: a full link answers too late to pass the probe.
+// one is ignored while the link is busy: a full link answers too late to pass the probe.
 func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if up {
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
-	} else if sl.rateIn[Fam4]+sl.rateIn[Fam6] < minMeasuredPeak {
+	} else if !sl.busyCarrying() {
 		sl.state[f] = stateDown
 	}
+}
+
+// busyCarrying reports whether net-merge is moving real data over the link: receiving it, or
+// sending it while the acknowledgements come back (about 1% or more, from the OS's counters).
+// Apps that bypass net-merge are not counted, as the OS's counters alone also include LAN traffic.
+// The caller holds Scheduler.mu.
+func (sl *Slot) busyCarrying() bool {
+	in := sl.rateIn[Fam4] + sl.rateIn[Fam6]
+	out := sl.rateOut[Fam4] + sl.rateOut[Fam6]
+	return in >= minMeasuredPeak || out >= minMeasuredPeak && sl.linkRateIn >= out/100
 }
 
 // Fail sidelines a NIC whose link itself is broken (for one address family).
