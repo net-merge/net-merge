@@ -7,7 +7,11 @@ entry here before pushing a version tag.
 
 ### Added
 - **Speed beside the icon** on macOS and Windows: `↓79 ↑7.0`, in Mbps. While merging it is all your
-  connections together, while paused your default one. Untick *Show Speed* in the menu to hide it.
+  connections together, while paused your default one. Untick *Show Speed* in the menu to hide it. On
+  Windows it is a second small icon beside the app's, two rows with an arrow and a number each (download
+  on top), readable on light and dark taskbars and at 100% to 200% scale; paused it turns amber, and the
+  tooltip has the full numbers. Windows may first put a new icon under the ^ arrow: drag it onto the
+  taskbar to keep it in view.
 - **A waybar module** for Sway and Hyprland: `net-merge status -waybar` prints the speed for a custom
   module (see Troubleshooting in the README).
 - **Check For Updates**, a tick box in the menu, on by default. When a newer release is out the version

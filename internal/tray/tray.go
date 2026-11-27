@@ -35,7 +35,7 @@ func Run(t *tun.Tun, sched *engine.Scheduler, bal *engine.Balancer, stateDir, ve
 	ui.ap.enabled = autoPause
 	ui.providers = provider.New()
 	defer ui.providers.Close()
-	exit := func() { t.Close(); state.Clear(stateDir) }
+	exit := func() { removeTraySpeed(); t.Close(); state.Clear(stateDir) }
 	systray.Run(ui.onReady, exit)
 	exit() // macOS's Run returns on Quit without calling onExit; both are idempotent
 }

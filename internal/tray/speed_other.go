@@ -12,3 +12,7 @@ func setTraySpeed(down, up string, _ bool) {
 	}
 	systray.SetTitle(" ↓" + down + " ↑" + up)
 }
+
+// removeTraySpeed is for when the tray quits. The menu bar title goes with the process, and by then
+// systray has stopped, so there is nothing to do.
+func removeTraySpeed() {}
