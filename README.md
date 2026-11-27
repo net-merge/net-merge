@@ -554,7 +554,8 @@ connects to:
   connection that sends no data, to see whether each of your connections has internet.
 - `api.github.com`: the tray reads the newest release number, at start and every 6 hours.
 - From v0.3.8, `ipwho.is`, or `ipinfo.io` if that fails: the tray asks who provides each connection, to
-  show the provider's name beside it. The service sees that connection's public IP address.
+  show the provider's name beside it. The service sees that connection's public IP address. This is on
+  by default; untick *Show ISP Names* in the menu to stop it.
 
 Their privacy policies: [Cloudflare](https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/),
 [Google](https://developers.google.com/speed/public-dns/privacy),
