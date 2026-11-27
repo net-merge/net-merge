@@ -534,3 +534,25 @@ Building a college project? [DormHost](https://dormhost.dev/?utm_source=net-merg
 ## Support
 
 net-merge is free. If it saves you time, you can [buy me a coffee](https://buymeacoffee.com/rohit267) or [donate with PayPal](https://paypal.me/champdev). Thank you!
+
+## Code signing policy
+
+Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
+[SignPath Foundation](https://signpath.org/).
+
+Signing is being set up: releases up to v0.3.7 are not signed.
+
+- Committers and reviewers: [@rohit267](https://github.com/rohit267)
+- Approvers: [@rohit267](https://github.com/rohit267)
+
+## Privacy
+
+net-merge has no accounts, analytics or telemetry. Besides passing on your own apps' traffic, it only
+connects to:
+
+- `1.1.1.1` and `8.8.8.8` (Cloudflare and Google public DNS, and their IPv6 addresses), port 443: a
+  connection that sends no data, to see whether each of your connections has internet.
+- `api.github.com`: the tray reads the newest release number, at start and every 6 hours.
+
+The Linux package server, `pkg.net-merge.org`, counts how many different computers check for updates each
+day. For that it keeps a salted hash of each IP address, for that day only.
