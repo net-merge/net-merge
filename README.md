@@ -524,6 +524,20 @@ and never switches by itself more than once every 30 seconds.
 On Windows it may be behind the `^` arrow next to the clock. On macOS it is in the menu bar. On Linux the
 desktop needs StatusNotifierItem support (KDE, XFCE, Cinnamon, LXQt, Budgie, or GNOME with the *AppIndicator
 and KStatusNotifierItem Support* extension).
+
+**Waybar (Sway, Hyprland).** Show the speed in the bar with a custom module, no tray needed:
+
+```jsonc
+"custom/net-merge": {
+    "exec": "net-merge status -waybar",
+    "return-type": "json",
+    "interval": 2,
+    "on-click": "net-merge on",
+    "on-click-right": "net-merge off"
+}
+```
+
+Add `"custom/net-merge"` to `modules-right`. The two clicks switch a running `net-merge tray` or `run`.
 </details>
 
 <details>

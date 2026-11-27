@@ -27,7 +27,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge run        system-wide ON in a console window (asks for admin/root); Ctrl+C or "off" turns it OFF
   net-merge on|off     turn system-wide mode on/off in a running tray (off also works for run)
   net-merge quit       turn it off and exit the tray
-  net-merge status     show whether it is on, and per-adapter load
+  net-merge status     show whether it is on, and per-adapter load (-waybar: for a waybar module)
   net-merge limit <adapter> <Mbit/s>   cap an adapter (0 or unlimited removes the cap)
   net-merge limit      list the saved speed limits
   net-merge alias <adapter> [name]   set a display name (omit name to remove it)
@@ -527,8 +527,13 @@ func cmdControl(name string, args []string) {
 func cmdStatus(args []string) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	dir := fs.String("state-dir", state.DefaultDir(), "state directory")
+	waybar := fs.Bool("waybar", false, "print one line of JSON for a waybar custom module")
 	fs.Parse(args)
 	st, on := state.Read(*dir)
+	if *waybar {
+		fmt.Println(waybarJSON(st, on))
+		return
+	}
 	if !on {
 		fmt.Println("net-merge is OFF.")
 		return

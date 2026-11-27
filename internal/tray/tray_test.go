@@ -160,3 +160,14 @@ func TestSaveSettingKeepsTheOthers(t *testing.T) {
 		t.Fatalf("saved %+v, %v", got, err)
 	}
 }
+
+func TestSpeedTitle(t *testing.T) {
+	for _, c := range []struct {
+		on, show bool
+		want     string
+	}{{true, true, " ↓80 ↑4.0"}, {false, true, ""}, {true, false, ""}} {
+		if got := speedTitle(c.on, c.show, 1e7, 5e5); got != c.want {
+			t.Errorf("speedTitle(%v, %v) = %q, want %q", c.on, c.show, got, c.want)
+		}
+	}
+}

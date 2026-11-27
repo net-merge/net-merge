@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -61,6 +62,9 @@ type trayUI struct {
 	coolItem, gameItem                               *menuItem
 	versionItem                                      *menuItem
 	updatesItem                                      *menuItem
+	speedItem                                        *menuItem // macOS only, else nil
+	showSpeed                                        bool
+	lastTitle                                        string
 	checkUpdates, updateShown                        atomic.Bool
 	recheck                                          chan struct{}
 	rows                                             []*menuItem
@@ -128,6 +132,11 @@ func (u *trayUI) setupMenu() *menuItem {
 	u.checkUpdates.Store(!settings.NoUpdateCheck)
 	u.recheck = make(chan struct{}, 1)
 	u.updatesItem = addMenuItemCheckbox("Check For Updates", "Asks GitHub for the newest release number at start and every 6 hours.", !settings.NoUpdateCheck)
+	u.showSpeed = !settings.HideSpeed
+	if runtime.GOOS == "darwin" { // only the macOS menu bar has room for text beside the icon
+		u.speedItem = addMenuItemCheckbox("Show Speed", "Shows the total speed next to the icon in the menu bar while merging.", u.showSpeed)
+		setSymbol(u.speedItem, "speed")
+	}
 	u.toggleItem = addMenuItem("Start Merging", "")
 	u.versionItem = addMenuItem(versionLabel(u.version), versionTip)
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
@@ -218,6 +227,20 @@ func (u *trayUI) onReady() {
 					u.coolItem.Uncheck()
 				}
 				u.sched.SetPhoneCooling(u.coolItem.Checked())
+			case <-u.speedClicks():
+				on := !u.speedItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.HideSpeed = !on }); err != nil {
+					u.lastErr = "show speed: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+					continue
+				}
+				if on {
+					u.speedItem.Check()
+				} else {
+					u.speedItem.Uncheck()
+				}
+				u.showSpeed = on
 			case <-u.updatesItem.ClickedCh:
 				on := !u.updatesItem.Checked()
 				u.lastErr = ""
@@ -363,6 +386,10 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 	for _, s := range live {
 		down += s.LinkIn
 		up += s.LinkOut
+	}
+	if t := speedTitle(on, u.speedItem != nil && u.showSpeed, down, up); t != u.lastTitle {
+		systray.SetTitle(t)
+		u.lastTitle = t
 	}
 	state := stateWord(on)
 	if !on && u.ap.enabled && u.ap.waiting && !u.ap.manualOff {
@@ -567,7 +594,10 @@ func utf16Len(s string) int {
 }
 
 // mbps formats bytes/s as Mbit/s compactly: one decimal below 10, whole numbers above.
-func mbps(bytesPerSec float64) string {
+func mbps(bytesPerSec float64) string { return Mbps(bytesPerSec) }
+
+// Mbps writes a rate the way the tray does, for other places that show one.
+func Mbps(bytesPerSec float64) string {
 	m := bytesPerSec * 8 / 1e6
 	if m < 9.95 {
 		return fmt.Sprintf("%.1f", m)
@@ -667,4 +697,20 @@ func (u *trayUI) applyLimit(name string, mbitPerSec float64) {
 			u.showLimit(i, mbitPerSec)
 		}
 	}
+}
+
+// speedTitle is the text beside the menu bar icon: the total, only while merging.
+func speedTitle(on, show bool, down, up float64) string {
+	if !on || !show {
+		return ""
+	}
+	return " ↓" + mbps(down) + " ↑" + mbps(up)
+}
+
+// speedClicks is nil, which never fires in a select, where there is no Show Speed box.
+func (u *trayUI) speedClicks() <-chan struct{} {
+	if u.speedItem == nil {
+		return nil
+	}
+	return u.speedItem.ClickedCh
 }

@@ -19,6 +19,8 @@ type Settings struct {
 	GameMode bool `json:"game_mode"`
 	// NoUpdateCheck is the unticked Check For Updates box. Stored the negative way: on by default.
 	NoUpdateCheck bool `json:"no_update_check"`
+	// HideSpeed is the unticked Show Speed box (macOS menu bar). Stored the negative way: on by default.
+	HideSpeed bool `json:"hide_speed"`
 }
 
 type settingsFile struct {

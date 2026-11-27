@@ -6,6 +6,10 @@ entry here before pushing a version tag.
 ## [Unreleased]
 
 ### Added
+- **Speed in the macOS menu bar.** While merging, the total shows next to the icon (`↓79 ↑7.0`, in Mbps).
+  Untick *Show Speed* in the menu to hide it.
+- **A waybar module** for Sway and Hyprland: `net-merge status -waybar` prints the speed for a custom
+  module (see Troubleshooting in the README).
 - **Check For Updates**, a tick box in the menu, on by default. When a newer release is out the version
   line says *(Update Available)*, and clicking it opens net-merge.org/changelog: what changed, with the download
   on top. Untick the box to stop the check.
