@@ -5,6 +5,7 @@ package tray
 import (
 	"fmt"
 	"math"
+	"net"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -14,7 +15,9 @@ import (
 	"net-merge/internal/engine"
 	"net-merge/internal/icon"
 	"net-merge/internal/logx"
+	"net-merge/internal/nics"
 	"net-merge/internal/platform"
+	"net-merge/internal/provider"
 	"net-merge/internal/state"
 	"net-merge/internal/tun"
 	"net-merge/internal/update"
@@ -28,6 +31,8 @@ func Run(t *tun.Tun, sched *engine.Scheduler, bal *engine.Balancer, stateDir, ve
 	ui := &trayUI{tun: t, sched: sched, bal: bal, stateDir: stateDir, version: version, startOn: startOn,
 		iconOn: icon.Tray(true), iconOff: icon.Tray(false), ready: ready}
 	ui.ap.enabled = autoPause
+	ui.providers = provider.New()
+	defer ui.providers.Close()
 	exit := func() { t.Close(); state.Clear(stateDir) }
 	systray.Run(ui.onReady, exit)
 	exit() // macOS's Run returns on Quit without calling onExit; both are idempotent
@@ -61,9 +66,21 @@ type trayUI struct {
 	lastRows                                         [trayRows]string
 	lastErr                                          string
 	busyUntil                                        time.Time
+	ispItem                                          *menuItem
+	prefs                                          state.TrayPreferences
+	providers                                        *provider.Resolver
+	adaptersKey                                      string
+	adapters                                         []nics.Nic
+	kinds                                            map[string]nics.Kind
+	lastKinds                                        [trayRows]nics.Kind
 }
 
-func (u *trayUI) onReady() {
+func (u *trayUI) setupMenu() *menuItem {
+	var err error
+	u.prefs, err = state.LoadTrayPreferences(u.stateDir)
+	if err != nil {
+		logx.Printf("warning: tray preferences: %v\n", err)
+	}
 	if u.ready != nil {
 		close(u.ready)
 	}
@@ -76,6 +93,7 @@ func (u *trayUI) onReady() {
 	u.limitClicks = make(chan limitClick, trayRows)
 	for i := 0; i < trayRows; i++ {
 		r := addMenuItem("", "Click to cap this adapter's speed (download and upload)")
+		setAdapterIcon(r, nics.Unknown)
 		u.rows = append(u.rows, r)
 		addLimit := func(mbitPerSec float64, title string) *menuItem {
 			it := r.AddSubMenuItemCheckbox(title, limitTip(mbitPerSec), false)
@@ -96,6 +114,7 @@ func (u *trayUI) onReady() {
 		r.Hide()
 	}
 	addSeparator()
+	u.ispItem = addMenuItemCheckbox("Show ISP names (online lookup)", "Ask ipwho.is (ipinfo.io as fallback) through each adapter; each service receives that adapter's public IP. Off by default.", u.prefs.LookupISP)
 	u.v6Item = addMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
 	u.gameItem = addMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
 	u.autoItem = addMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
@@ -104,6 +123,11 @@ func (u *trayUI) onReady() {
 	u.toggleItem = addMenuItem("Start merging", "")
 	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
+	return quit
+}
+
+func (u *trayUI) onReady() {
+	quit := u.setupMenu()
 	go u.watchUpdates()
 
 	go func() {
@@ -124,6 +148,8 @@ func (u *trayUI) onReady() {
 		for {
 			u.refresh()
 			select {
+			case <-u.ispItem.ClickedCh:
+				u.toggleISP()
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
 			case <-u.gameItem.ClickedCh:
@@ -191,6 +217,13 @@ func (u *trayUI) onReady() {
 				systray.Quit()
 				return
 			case <-tick.C:
+				if req, ok := state.TakeAlias(u.stateDir); ok {
+					if err := state.SetAlias(u.stateDir, req.Adapter, req.Alias); err != nil {
+						u.lastErr = "alias: " + err.Error()
+					} else {
+						u.prefs, _ = state.LoadTrayPreferences(u.stateDir)
+					}
+				}
 				if req, ok := state.TakeLimit(u.stateDir); ok { // `net-merge limit ...` from a terminal
 					u.applyLimit(req.Adapter, req.Mbps)
 				}
@@ -271,6 +304,17 @@ func (u *trayUI) setHeader(s string) {
 
 func (u *trayUI) refresh() {
 	on := u.tun.IsOn()
+	var live []engine.SlotStats
+	for _, s := range u.sched.Snapshot() {
+		if s.Present {
+			live = append(live, s)
+		}
+	}
+	u.refreshMenu(on, live)
+}
+
+func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
+	u.refreshMetadata(live)
 	if u.lastOn == nil || *u.lastOn != on {
 		if on {
 			systray.SetIcon(u.iconOn)
@@ -284,14 +328,10 @@ func (u *trayUI) refresh() {
 
 	// Speeds are each adapter's real traffic from the OS's counters, i.e. every app (qBittorrent binds
 	// to adapters directly and never passes through net-merge), and they are shown even when paused.
-	var live []engine.SlotStats
 	var down, up float64
-	for _, s := range u.sched.Snapshot() {
-		if s.Present {
-			live = append(live, s)
-			down += s.LinkIn
-			up += s.LinkOut
-		}
+	for _, s := range live {
+		down += s.LinkIn
+		up += s.LinkOut
 	}
 	state := stateWord(on)
 	if !on && u.ap.enabled && u.ap.waiting && !u.ap.manualOff {
@@ -310,41 +350,111 @@ func (u *trayUI) refresh() {
 				r.Hide()
 				u.lastRows[i] = ""
 				u.rowNames[i] = ""
+				u.lastKinds[i] = ""
 			}
 			continue
 		}
 		s := live[i]
 		u.rowNames[i] = s.Name
-		txt := fmt.Sprintf("%s:  ↓%s ↑%s Mbps", s.Name, mbps(s.LinkIn), mbps(s.LinkOut))
-		if s.LimitMbps > 0 {
-			txt += "  limit " + limitText(s.LimitMbps)
-		}
-		if on {
-			if s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
-				txt += "  cooling at " + limitText(s.CoolMbps)
-			}
-			txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
-		}
-		if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
-			txt += "  - " + s.State
-		}
-		if s.State6 == "up" {
-			txt += "  +IPv6"
-		}
+		isp := u.providers.Get(s.Name)
+		txt := menuText(adapterRow(s, on, u.prefs.Aliases[s.Name], isp))
 		if txt != u.lastRows[i] {
 			r.SetTitle(txt)
 			r.Show()
 			u.lastRows[i] = txt
 		}
+		kind := u.kinds[s.Name]
+		if kind == "" {
+			kind = nics.Unknown
+		}
+		if kind != u.lastKinds[i] {
+			setAdapterIcon(r, kind)
+			u.lastKinds[i] = kind
+		}
 		u.showLimit(i, s.LimitMbps)
 	}
 
 	// Hover tooltip: one line per adapter, so speeds are visible without opening the menu.
-	tip := trayTooltip(state, down, up, live)
+	tipLive := append([]engine.SlotStats(nil), live...)
+	for i := range tipLive {
+		if alias := u.prefs.Aliases[tipLive[i].Name]; alias != "" {
+			tipLive[i].Name = alias
+		}
+	}
+	tip := trayTooltip(state, down, up, tipLive)
 	if tip != u.lastTip {
 		systray.SetTooltip(tip)
 		u.lastTip = tip
 	}
+}
+
+// refreshMetadata only enumerates hardware when the adapter/address set changes.
+// The resolver separately coalesces these UI refreshes into one lookup per address.
+func (u *trayUI) refreshMetadata(live []engine.SlotStats) {
+	var key strings.Builder
+	for _, s := range live {
+		fmt.Fprintf(&key, "%s/%s/%s\x00", s.Name, s.IP, s.IP6)
+	}
+	if key.String() != u.adaptersKey {
+		u.adaptersKey = key.String()
+		u.kinds = nics.AdapterKinds()
+		u.adapters = nil
+		for _, s := range live {
+			ifc, err := net.InterfaceByName(s.Name)
+			if err == nil {
+				u.adapters = append(u.adapters, nics.Nic{Name: s.Name, Index: ifc.Index, IP: net.ParseIP(s.IP), IP6: net.ParseIP(s.IP6)})
+			}
+		}
+	}
+	u.providers.Refresh(u.adapters, u.prefs.LookupISP)
+}
+
+func (u *trayUI) toggleISP() {
+	p, err := state.LoadTrayPreferences(u.stateDir)
+	if err == nil {
+		p.LookupISP = !p.LookupISP
+		err = state.SaveTrayPreferences(u.stateDir, p)
+	}
+	if err != nil {
+		u.lastErr = "ISP lookup preference: " + err.Error()
+		logx.Printf("error: %s\n", u.lastErr)
+		return
+	}
+	u.prefs = p
+	if p.LookupISP {
+		u.ispItem.Check()
+	} else {
+		u.ispItem.Uncheck()
+	}
+	u.providers.Refresh(u.adapters, p.LookupISP) // turning off cancels pending requests now
+}
+
+func adapterRow(s engine.SlotStats, on bool, alias, isp string) string {
+	name := s.Name
+	if alias != "" {
+		name = alias
+	}
+	if isp != "" && isp != name {
+		name += " · " + shorten(isp, 45)
+	}
+	// Keep the numeric traffic suffix left-to-right after an Arabic/Hebrew alias.
+	txt := fmt.Sprintf("%s\u200e  ↓%s ↑%s Mbps", name, mbps(s.LinkIn), mbps(s.LinkOut))
+	if s.LimitMbps > 0 {
+		txt += "  limit " + limitText(s.LimitMbps)
+	}
+	if on {
+		if s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
+			txt += "  cooling at " + limitText(s.CoolMbps)
+		}
+		txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
+	}
+	if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
+		txt += "  - " + s.State
+	}
+	if s.State6 == "up" {
+		txt += "  +IPv6"
+	}
+	return txt
 }
 
 // Windows 11 shows only the first 64 characters of a tray tooltip (measured: the text stopped mid-

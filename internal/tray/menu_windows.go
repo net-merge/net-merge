@@ -5,6 +5,7 @@ package tray
 import (
 	"fyne.io/systray"
 
+	"net-merge/internal/nics"
 	"net-merge/internal/winmenu"
 )
 
@@ -23,3 +24,11 @@ func startMenu() {
 	systray.SetOnTapped(winmenu.Popup)
 	systray.SetOnSecondaryTapped(winmenu.Popup)
 }
+
+// setAdapterIcon tells the menu what kind of adapter a row is; it draws the matching Fluent icon.
+func setAdapterIcon(it *menuItem, kind nics.Kind) { it.SetAdapterKind(string(kind)) }
+
+// menuText leaves the row as it is: this menu draws text itself, so "&" is not a mnemonic here, and the
+// text's direction is set by the menu. The mark after an alias (see adapterRow) still keeps the
+// numbers on the same side.
+func menuText(s string) string { return s }

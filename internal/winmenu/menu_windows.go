@@ -424,11 +424,12 @@ func Start() {
 		ready := make(chan struct{})
 		go loop(ready)
 		<-ready
-		changed = func() {
+		redraw := func() {
 			if !dirtyQueued.Swap(true) {
 				pPostMessage.Call(ctlHwnd.Load(), wmAppDirty, 0, 0)
 			}
 		}
+		onChanged.Store(&redraw)
 	})
 }
 

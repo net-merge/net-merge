@@ -3,14 +3,26 @@
 // same methods as fyne.io/systray's, so the tray code is the same on every OS.
 package winmenu
 
-import "sync"
+import (
+	"sync"
+	"sync/atomic"
+)
 
 var (
 	mu   sync.Mutex // guards root and every Item's fields
 	root []*Item
 
-	changed = func() {} // tells the menu thread that an open menu must be redrawn
+	// onChanged tells the menu thread that an open menu must be redrawn. Start sets it, possibly while
+	// other goroutines are already changing items, so it is read and written atomically.
+	onChanged atomic.Pointer[func()]
 )
+
+// changed asks for an open menu to be redrawn, if the menu thread is running.
+func changed() {
+	if f := onChanged.Load(); f != nil {
+		(*f)()
+	}
+}
 
 // Item is one row of the menu. Its methods can be called from any goroutine.
 type Item struct {
@@ -20,6 +32,7 @@ type Item struct {
 	title                          string
 	sep, checked, disabled, hidden bool
 	checkable                      bool
+	kind                           string // an adapter row's type, as nics.Kind says: "wifi", "ethernet", "phone", "network"
 	kids                           []*Item
 }
 
@@ -85,6 +98,10 @@ func (it *Item) Show()                 { it.set(func() { it.hidden = false }) }
 func (it *Item) Check()                { it.set(func() { it.checked = true }) }
 func (it *Item) Uncheck()              { it.set(func() { it.checked = false }) }
 
+// SetAdapterKind says what kind of adapter an adapter row is ("wifi", "ethernet", "phone", or anything
+// else for "not known"), so it gets that kind's icon instead of one guessed from its name.
+func (it *Item) SetAdapterKind(kind string) { it.set(func() { it.kind = kind }) }
+
 // Checked reports whether the row shows a check mark.
 func (it *Item) Checked() bool {
 	mu.Lock()
@@ -114,7 +131,7 @@ func snapshot(items []*Item) []row {
 			}
 		default:
 			hasSub := len(it.kids) > 0
-			rows = append(rows, row{item: it, title: it.title, icon: iconFor(it.title, hasSub), checked: it.checked,
+			rows = append(rows, row{item: it, title: it.title, icon: iconForItem(it.title, hasSub, it.kind), checked: it.checked,
 				checkable: it.checkable, disabled: it.disabled, hasSub: hasSub})
 		}
 	}

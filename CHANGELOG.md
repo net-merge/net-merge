@@ -21,6 +21,14 @@ entry here before pushing a version tag.
   worked at full speed for 3 minutes is held at 20 Mbit/s until it has had a rest, so it stays cooler;
   the menu shows *cooling at 20 Mbit/s* while that lasts. The choice is remembered, also when net-merge
   starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
+- **Adapter icons in the tray menu.** Each adapter shows a Wi-Fi, Ethernet, phone or USB tether, or
+  generic network icon, chosen from what the system says the adapter is (on Windows 11 they are the
+  menu's own Fluent icons). It is only a picture; it never changes which adapter is used.
+- **Optional ISP names in adapter rows.** Tick **Show ISP names (online lookup)** in the tray. It is off
+  by default. When on, net-merge asks `ipwho.is` (or `ipinfo.io` if that fails), through that adapter,
+  who provides it; the service sees that adapter's public IP address and nothing else.
+- **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
+  tray, `net-merge status` and `net-merge list` show beside the system name; balancing is unchanged.
 
 ### Changed
 - **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
