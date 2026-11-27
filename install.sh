@@ -7,7 +7,7 @@
 # repositories, so it updates with everything else; otherwise Homebrew; otherwise the release tarball.
 # macOS: Homebrew if it is installed, otherwise the release tarball.
 # Then it starts the tray. NET_MERGE_METHOD=tarball skips the package managers, NET_MERGE_NO_START=1
-# leaves the tray off.
+# leaves the tray off. Running it again updates an installed net-merge.
 #
 # Uninstall, however it was installed:
 #
@@ -62,7 +62,12 @@ tarball() {
 # ---- Homebrew (as the user: brew refuses root)
 homebrew() {
     say "Installing with Homebrew"
-    brew install net-merge/tap/net-merge
+    if brew list --formula net-merge >/dev/null 2>&1; then
+        brew update --quiet
+        brew upgrade net-merge/tap/net-merge
+    else
+        brew install net-merge/tap/net-merge
+    fi
     bin=$(brew --prefix)/bin/net-merge
     if [ "$(uname -s)" = Darwin ]; then
         $SUDO "$bin" install
@@ -84,7 +89,9 @@ rpm_install() { # rpm_install dnf|yum
     say "Installing with $1"
     fetch "$BASE/rpm/net-merge.repo" > "$tmp/net-merge.repo"
     $SUDO install -m 644 "$tmp/net-merge.repo" /etc/yum.repos.d/net-merge.repo
+    $SUDO "$1" clean expire-cache >/dev/null   # a cached package list would hide a new release
     $SUDO "$1" install -y net-merge
+    $SUDO "$1" upgrade -y net-merge            # install leaves an installed one as it is
 }
 zypper_install() {
     say "Installing with zypper"
@@ -97,7 +104,7 @@ apk_install() {
     fetch "$BASE/apk/net-merge.rsa.pub" > "$tmp/net-merge.rsa.pub"
     $SUDO install -m 644 "$tmp/net-merge.rsa.pub" /etc/apk/keys/net-merge.rsa.pub
     grep -qx "$BASE/apk" /etc/apk/repositories || echo "$BASE/apk" | $SUDO tee -a /etc/apk/repositories >/dev/null
-    $SUDO apk add net-merge
+    $SUDO apk add --update-cache --upgrade net-merge   # also updates an installed one
 }
 pacman_install() {
     say "Installing with pacman"
@@ -188,6 +195,8 @@ if [ "$(uname -s)" = Darwin ]; then
     $SUDO mkdir -p /usr/local/bin   # where `net-merge install` puts its root-owned copy
     if [ "$method" = auto ] && have brew && [ "$(id -u)" != 0 ]; then homebrew; else tarball; fi
 elif [ "$(uname -s)" = Linux ]; then
+    # a running tray keeps the old version until it is restarted below
+    have pgrep && pgrep -f 'net-merge tray' >/dev/null && { net-merge quit >/dev/null 2>&1 || true; sleep 2; }
     if [ -f /etc/NIXOS ]; then
         die "on NixOS use the module instead: $REPO#nixos"
     elif [ "$method" != auto ]; then tarball
