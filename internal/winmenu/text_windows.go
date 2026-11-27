@@ -59,6 +59,14 @@ const (
 
 type comObject struct{ vtable *[128]uintptr }
 
+// call runs a COM method. Callers pass the addresses of their locals as uintptr(unsafe.Pointer(&x)),
+// both to give COM an input and to receive an output. The directive below is what makes that safe: it
+// moves those locals to the heap and keeps them alive until the call returns, as syscall.SyscallN and
+// windows.LazyProc.Call do for their own arguments. Without it a local can stay on the goroutine's
+// stack, the stack can be moved between taking the address and the call, and COM then reads or writes
+// the old copy (a text width of 0, or a nil layout). See stack_windows_test.go.
+//
+//go:uintptrescapes
 func (o *comObject) call(index int, args ...uintptr) uintptr {
 	r, _, _ := syscall.SyscallN(o.vtable[index], append([]uintptr{uintptr(unsafe.Pointer(o))}, args...)...)
 	return r
