@@ -67,7 +67,7 @@ type trayUI struct {
 	lastErr                                          string
 	busyUntil                                        time.Time
 	ispItem                                          *menuItem
-	prefs                                          state.TrayPreferences
+	prefs                                            state.TrayPreferences
 	providers                                        *provider.Resolver
 	adaptersKey                                      string
 	adapters                                         []nics.Nic

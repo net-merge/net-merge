@@ -53,7 +53,7 @@ func TestAdapterRowTextAfterTheNameDoesNotPickTheIcon(t *testing.T) {
 		{"Wi-Fi" + lrm + "  ↓79 ↑7.0 Mbps  (31 flows via net-merge)  +IPv6", iconWifi},
 		{lrm + "Wi-Fi · Planet Online" + lrm + "  ↓1 ↑1 Mbps", iconWifi},         // "lan" is in Planet
 		{lrm + "Home · Sprint Wireless USB" + lrm + "  ↓1 ↑1 Mbps", iconNetwork}, // not Wi-Fi, not USB
-		{"Ethernet 3:  ↓16 ↑0.2 Mbps  wifi", iconEthernet},                        // the older format
+		{"Ethernet 3:  ↓16 ↑0.2 Mbps  wifi", iconEthernet},                       // the older format
 		{"Ethernet 5" + lrm + "  ↓1 ↑1 Mbps  limit 20 Mbit/s  cooling at 20 Mbit/s", iconEthernet},
 	} {
 		if got := iconFor(c.title, true); got != c.want {

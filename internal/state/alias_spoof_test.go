@@ -23,8 +23,8 @@ func TestAliasRejectsTextDirectionOverridesButKeepsRealScripts(t *testing.T) {
 	}
 	for _, ok := range []string{
 		"خط البيت",
-		"Home" + chars(0x200E), // left-to-right mark
-		chars(0x200F) + "البيت", // right-to-left mark
+		"Home" + chars(0x200E),          // left-to-right mark
+		chars(0x200F) + "البيت",         // right-to-left mark
 		"کارگاه" + chars(0x200C) + "ها", // zero-width non-joiner, needed in Persian
 		"Jio phone",
 	} {
