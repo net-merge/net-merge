@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math"
 	"net"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf16"
@@ -114,11 +115,11 @@ func (u *trayUI) setupMenu() *menuItem {
 		r.Hide()
 	}
 	addSeparator()
-	u.ispItem = addMenuItemCheckbox("Show ISP names (online lookup)", "Ask ipwho.is (ipinfo.io as fallback) through each adapter; each service receives that adapter's public IP. Off by default.", u.prefs.LookupISP)
-	u.v6Item = addMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
-	u.gameItem = addMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
-	u.autoItem = addMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
-	u.coolItem = addMenuItemCheckbox("Cool down phone hotspots", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
+	u.ispItem = addMenuItemCheckbox("Look up ISP names", "Ask ipwho.is (ipinfo.io as fallback) through each adapter; each service receives that adapter's public IP. Off by default.", u.prefs.LookupISP)
+	u.v6Item = addMenuItemCheckbox("Use all adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.gameItem = addMenuItemCheckbox("Game mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
+	u.autoItem = addMenuItemCheckbox("Auto-pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.coolItem = addMenuItemCheckbox("Cool down phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
 	u.signInItem = addMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
 	u.toggleItem = addMenuItem("Start merging", "")
 	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
@@ -341,7 +342,7 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 	if u.lastErr != "" {
 		u.setHeader("Error: " + shorten(u.lastErr, 70))
 	} else {
-		u.setHeader(fmt.Sprintf("%s  ·  Total ↓%s ↑%s Mbps", state, mbps(down), mbps(up)))
+		u.setHeader(fmt.Sprintf("%s  ·  ↓%s ↑%s Mbps", state, mbps(down), mbps(up)))
 	}
 
 	for i, r := range u.rows {
@@ -438,21 +439,15 @@ func adapterRow(s engine.SlotStats, on bool, alias, isp string) string {
 		name += " · " + shorten(isp, 45)
 	}
 	// Keep the numeric traffic suffix left-to-right after an Arabic/Hebrew alias.
-	txt := fmt.Sprintf("%s\u200e  ↓%s ↑%s Mbps", name, mbps(s.LinkIn), mbps(s.LinkOut))
+	txt := fmt.Sprintf("%s\u200e  ↓%s ↑%s", name, mbps(s.LinkIn), mbps(s.LinkOut))
 	if s.LimitMbps > 0 {
-		txt += "  limit " + limitText(s.LimitMbps)
+		txt += "  max " + strconv.FormatFloat(s.LimitMbps, 'f', -1, 64)
 	}
-	if on {
-		if s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
-			txt += "  cooling at " + limitText(s.CoolMbps)
-		}
-		txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
+	if on && s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
+		txt += "  cooling " + strconv.FormatFloat(s.CoolMbps, 'f', -1, 64)
 	}
 	if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
 		txt += "  - " + s.State
-	}
-	if s.State6 == "up" {
-		txt += "  +IPv6"
 	}
 	return txt
 }

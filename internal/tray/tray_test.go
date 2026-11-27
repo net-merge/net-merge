@@ -27,7 +27,7 @@ func TestShortenCountsUTF16AndKeepsRunesWhole(t *testing.T) {
 func TestAdapterRowKeepsLiveDetailsWithAliasAndISP(t *testing.T) {
 	s := engine.SlotStats{Name: "Ethernet 5", LinkIn: 12.3 * 125000, LinkOut: 1.2 * 125000, State: "up", State6: "up", Active: 7, LimitMbps: 20}
 	got := adapterRow(s, true, "Home", "Example ISP")
-	for _, text := range []string{"Home · Example ISP", "↓12", "↑1.2", "limit 20 Mbit/s", "7 flows", "+IPv6"} {
+	for _, text := range []string{"Home · Example ISP", "↓12", "↑1.2", "max 20"} {
 		if !strings.Contains(got, text) {
 			t.Errorf("%q missing from %q", text, got)
 		}

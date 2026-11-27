@@ -66,11 +66,11 @@ func iconForItem(title string, hasSub bool, kind string) string {
 		return iconPlay
 	case strings.HasPrefix(title, "Use all adapters"):
 		return iconGlobe
-	case strings.HasPrefix(title, "Show ISP names"):
+	case title == "Look up ISP names":
 		return iconProvider
-	case strings.HasPrefix(title, "Keep a connection free"):
+	case title == "Game mode":
 		return iconGame
-	case strings.HasPrefix(title, "Pause when"):
+	case title == "Auto-pause":
 		return iconLink
 	case strings.HasPrefix(title, "Cool down"):
 		return iconCool

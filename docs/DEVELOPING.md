@@ -80,7 +80,7 @@ The app's connection ends inside the userland stack. net-merge then opens a seco
   are measured, at least as fast as the phone for that address family (`peak`), and carry fewer than 3
   busy flows and less than 1 Mbit/s. A faster or unmeasured phone is scheduled as usual, so none of this
   costs speed; once the other links are busy, parallel downloads split exactly as before. Opt-in only
-  (tray *Cool down phone hotspots*, saved in `settings.json` next to `limits.json`, or `-phone-cooling`):
+  (tray *Cool down phone*, saved in `settings.json` next to `limits.json`, or `-phone-cooling`):
   after 3 minutes above the cool rate the link is capped at `-phone-cool` until the load has been below
   it for a while (each second of rest pays back half a second of work, and the cap goes when half is
   paid back). The cap sits on top of the user's own limit: the lower one wins, and the saved one is

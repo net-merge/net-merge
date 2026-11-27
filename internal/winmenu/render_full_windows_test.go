@@ -30,11 +30,11 @@ func fullMenu() []*Item {
 		adapter("Home · Example ISP"+leftToRight+"  ↓79 ↑7.0 Mbps  limit 100 Mbit/s  (31 flows via net-merge)  +IPv6", "wifi"),
 		adapter("iPhone USB"+leftToRight+"  ↓31 ↑3.1 Mbps  cooling at 20 Mbit/s  (9 flows via net-merge)", "phone"),
 		sep(),
-		row("Show ISP names (online lookup)", true, true, false),
-		row("Use all adapters (IPv6 only if every adapter has it)", true, true, false),
-		row("Keep a connection free for games and calls", true, true, false),
-		row("Pause when there is only one connection", true, true, false),
-		row("Cool down phone hotspots", true, false, false),
+		row("Look up ISP names", true, true, false),
+		row("Use all adapters", true, true, false),
+		row("Game mode", true, true, false),
+		row("Auto-pause", true, true, false),
+		row("Cool down phone", true, false, false),
 		row("Start at sign-in", true, false, false),
 		row("Pause merging", false, false, false),
 		row("v0.3.7", false, false, false),
@@ -56,8 +56,8 @@ func TestFullMenuRendersWithIconsInBothThemes(t *testing.T) {
 			var widest int
 			w, h := layoutRows(rows, dpi, 0, 0, textWidthAt(dpi))
 			widest = w
-			const hover = 8 // "Keep a connection free for games and calls"
-			if rows[hover].title != "Keep a connection free for games and calls" {
+			const hover = 8 // "Game mode"
+			if rows[hover].title != "Game mode" {
 				t.Fatalf("row %d is %q", hover, rows[hover].title)
 			}
 			rows[hover].glow = 1

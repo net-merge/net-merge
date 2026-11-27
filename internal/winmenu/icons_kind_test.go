@@ -7,9 +7,9 @@ const lrm = leftToRight
 // The rows that the other tray changes added must have icons like the rest of the menu.
 func TestNewMenuItemsHaveIcons(t *testing.T) {
 	for _, c := range []struct{ title, want string }{
-		{"Show ISP names (online lookup)", iconProvider},
-		{"Keep a connection free for games and calls", iconGame},
-		{"Cool down phone hotspots", iconCool},
+		{"Look up ISP names", iconProvider},
+		{"Game mode", iconGame},
+		{"Cool down phone", iconCool},
 	} {
 		if got := iconFor(c.title, false); got != c.want || got == "" {
 			t.Errorf("iconFor(%q) = %q, want %q", c.title, got, c.want)
@@ -17,8 +17,8 @@ func TestNewMenuItemsHaveIcons(t *testing.T) {
 	}
 	icons := map[string]string{}
 	for _, title := range []string{
-		"Show ISP names (online lookup)", "Keep a connection free for games and calls", "Cool down phone hotspots",
-		"Use all adapters (IPv6 only if every adapter has it)", "Pause when there is only one connection",
+		"Look up ISP names", "Game mode", "Cool down phone",
+		"Use all adapters", "Auto-pause",
 		"Start at sign-in", "Start merging", "Quit",
 	} {
 		g := iconFor(title, false)

@@ -6,7 +6,7 @@ entry here before pushing a version tag.
 ## [Unreleased]
 
 ### Added
-- **Keep a connection free for games and calls**, a new menu item, off unless you tick it. While a
+- **Game mode**, a new menu item, off unless you tick it. While a
   connection carries a game or a voice call, new connections go over your other ones. The choice is
   remembered, also when net-merge starts at sign-in.
 - **An iPhone hotspot gets more rest, with no loss of speed.** net-merge now recognises an iPhone
@@ -17,20 +17,24 @@ entry here before pushing a version tag.
   and not busy. A phone that is faster than your other connection keeps getting them. `net-merge list`
   shows *(phone hotspot)*, and `-phone "Name"` treats another adapter (for example an Android phone)
   the same way.
-- **Cool down phone hotspots**, a new menu item, off unless you tick it. When ticked, a phone that has
+- **Cool down phone**, a new menu item, off unless you tick it. When ticked, a phone that has
   worked at full speed for 3 minutes is held at 20 Mbit/s until it has had a rest, so it stays cooler;
-  the menu shows *cooling at 20 Mbit/s* while that lasts. The choice is remembered, also when net-merge
+  the menu shows *cooling 20* while that lasts. The choice is remembered, also when net-merge
   starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
 - **Adapter icons in the tray menu.** Each adapter shows a Wi-Fi, Ethernet, phone or USB tether, or
   generic network icon, chosen from what the system says the adapter is (on Windows 11 they are the
   menu's own Fluent icons). It is only a picture; it never changes which adapter is used.
-- **Optional ISP names in adapter rows.** Tick **Show ISP names (online lookup)** in the tray. It is off
+- **Optional ISP names in adapter rows.** Tick **Look up ISP names** in the tray. It is off
   by default. When on, net-merge asks `ipwho.is` (or `ipinfo.io` if that fails), through that adapter,
   who provides it; the service sees that adapter's public IP address and nothing else.
 - **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
   tray, `net-merge status` and `net-merge list` show beside the system name; balancing is unchanged.
 
 ### Changed
+- **A shorter tray menu.** Rows show just the name and speeds (`↓79 ↑7.0`, in Mbps as on the top line),
+  with *max 20* or *cooling 20* when capped. The tick boxes have short names: *Use all adapters*,
+  *Auto-pause*, *Game mode*, *Cool down phone*, *Look up ISP names*. Hover one to read what it does.
+  `net-merge status` still shows how many connections each adapter carries.
 - **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
   corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or
   dark theme, and opens in the corner by the taskbar like the Quick Settings flyout. It stays sharp at
