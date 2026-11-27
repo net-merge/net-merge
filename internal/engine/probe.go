@@ -97,10 +97,8 @@ func (s *Scheduler) probeDue() []probeJob {
 			if now.Sub(sl.lastProbe[f]) < every {
 				continue
 			}
-			in := sl.bytesIn[f].Load()
-			arrived := in != sl.probeIn[f]
-			sl.lastProbe[f], sl.probeIn[f], sl.suspect[f] = now, in, false
-			if every == probeEveryPhone && arrived {
+			sl.lastProbe[f], sl.suspect[f] = now, false
+			if every == probeEveryPhone && now.Sub(sl.heard[f]) < probeEveryUp { // arriving now, not just some time ago
 				continue
 			}
 			sl.probing[f].Store(true)

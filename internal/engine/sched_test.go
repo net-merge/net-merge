@@ -517,7 +517,7 @@ func TestGameModeSteersNewFlows(t *testing.T) {
 	s.now = func() time.Time { return now }
 	s.SetGameMode(true)
 	sl0 := s.slots[0]
-	u := s.trackUDP(sl0, Fam4)
+	u := s.trackUDP(sl0, Fam4, 40000)
 	for i := 0; i < 12; i++ {
 		now = now.Add(time.Second)
 		for p := 0; p < 20; p++ {
@@ -543,7 +543,7 @@ func TestGameModeActivityWindowAndIgnoredPorts(t *testing.T) {
 	s.now = func() time.Time { return now }
 	s.SetGameMode(true)
 	sl0 := s.slots[0]
-	u := s.trackUDP(sl0, Fam4)
+	u := s.trackUDP(sl0, Fam4, 40000)
 
 	// Background DNS/QUIC probes followed by a 60s idle gap must neither trigger nor taint the socket.
 	u.record(64, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53}, now)
@@ -605,5 +605,69 @@ func TestGameModeWinsOverStandby(t *testing.T) {
 	s.slots[0].gameActive = true
 	if got := s.Acquire(nil); got.Name != "phone" {
 		t.Fatalf("new flow went to %s, the link with the game", got.Name)
+	}
+}
+
+// The weight floor must not lift a link that is slow because it is capped.
+func TestCappedLinkIsNotLiftedByTheFloor(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1), nic("B", "10.0.0.2", 1)})
+	s.SetAuto(true)
+	s.SetLimit("B", 1)
+	A, B := s.slots[0], s.slots[1]
+	for _, sl := range s.slots {
+		s.SetState(sl, Fam4, true)
+	}
+	A.peak[Fam4], B.peak[Fam4] = 12.5e6, 125e3
+	s.Tick(time.Second)
+	got := map[string]int{}
+	for range 9 {
+		sl := s.AcquireFor(Fam4, nil)
+		got[sl.Name]++
+		s.track(sl, Fam4)
+	}
+	if got["B"] > 1 {
+		t.Fatalf("a link capped at 1 Mbit/s got %d of 9 flows (weight %.2f)", got["B"], B.weight[Fam4])
+	}
+}
+
+// Full over IPv4 while the IPv6 probe times out is still a working link.
+func TestFailedProbeIgnoredWhileOtherFamilyReceives(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam6, true)
+	a.bytesIn[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	s.SetState(a, Fam6, false)
+	if a.state[Fam6] != stateUp {
+		t.Fatalf("busy link's IPv6 marked %q", a.state[Fam6])
+	}
+}
+
+// The tunnel opens one socket per destination, so the torrent guard counts per application port.
+func TestManySocketsFromOneAppPortAreNotAGame(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	var socks []*udpFlowActivity
+	for range 30 {
+		socks = append(socks, s.trackUDP(s.slots[0], Fam4, 6881))
+	}
+	for range 60 {
+		now = now.Add(100 * time.Millisecond)
+		for i, u := range socks {
+			u.record(120, &net.UDPAddr{IP: net.IPv4(10, 1, 0, byte(i)), Port: 6881}, now)
+		}
+	}
+	for _, u := range socks {
+		if u.isGameLike(now) {
+			t.Fatal("one of 30 peer sockets of a torrent client was taken for a game")
+		}
+	}
+	game := s.trackUDP(s.slots[0], Fam4, 50000)
+	for range 60 {
+		now = now.Add(100 * time.Millisecond)
+		game.record(120, &net.UDPAddr{IP: net.IPv4(10, 2, 0, 1), Port: 27015}, now)
+	}
+	if !game.isGameLike(now) {
+		t.Fatal("a single game socket must still count")
 	}
 }

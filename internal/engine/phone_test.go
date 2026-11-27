@@ -281,8 +281,9 @@ func TestIdlePhoneIsProbedRarely(t *testing.T) {
 	}
 
 	// Traffic that arrives over the phone proves what a probe would.
-	phone.bytesIn[Fam4].Add(1000)
 	clock = clock.Add(probeEveryPhone)
+	phone.bytesIn[Fam4].Add(1000)
+	s.Tick(time.Second)
 	if due()[phone] {
 		t.Fatal("a phone that is carrying traffic must not be probed")
 	}
@@ -380,5 +381,24 @@ func TestPhoneStandbyThroughTheProxy(t *testing.T) {
 	}
 	if seen["127.0.0.2"] != 4 || seen["127.0.0.3"] != 4 {
 		t.Fatalf("want 4/4 with eight flows open, got %v", seen)
+	}
+}
+
+// Data long ago must not stand in for a probe: only data that is arriving now does.
+func TestPhoneProbeNotSkippedForOldData(t *testing.T) {
+	phone := nic("p", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{phone})
+	now := time.Now()
+	s.now = func() time.Time { return now }
+	p := s.slots[0]
+	s.SetState(p, Fam4, true)
+	p.lastProbe[Fam4] = now
+	p.bytesIn[Fam4].Add(1) // one byte just after the probe, then silence
+	s.Tick(time.Second)
+	s.Tick(time.Second)
+	now = now.Add(probeEveryPhone)
+	if len(s.probeDue()) == 0 {
+		t.Fatal("the due probe was skipped because of data from two minutes ago")
 	}
 }

@@ -57,8 +57,8 @@ type Slot struct {
 	present         bool
 	state           [2]linkState
 	lastProbe       [2]time.Time
-	probeIn         [2]int64 // bytesIn at the last probe or look, see probeDue
-	suspect         [2]bool  // a connection timed out: probe now, see Suspect
+	heard           [2]time.Time // the last tick that saw data arrive, see probeDue
+	suspect         [2]bool      // a connection timed out: probe now, see Suspect
 	heat            time.Duration
 	cooling         bool // held at the cool rate, see cool
 	downUntil       [2]time.Time
@@ -101,10 +101,22 @@ func (s *Scheduler) untrack(sl *Slot, f Family, a *flowActivity) {
 	delete(sl.flows[f], a)
 	s.mu.Unlock()
 }
-func (s *Scheduler) trackUDP(sl *Slot, f Family) *udpFlowActivity {
+
+// trackUDP follows one socket for game detection. appPort is the application's own port: the tunnel
+// opens a socket per destination, so who an application talks to is only seen across its sockets.
+func (s *Scheduler) trackUDP(sl *Slot, f Family, appPort uint16) *udpFlowActivity {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	u := &udpFlowActivity{}
+	app := s.apps[appPort]
+	if app == nil {
+		if s.apps == nil {
+			s.apps = map[uint16]*appPeers{}
+		}
+		app = &appPeers{}
+		s.apps[appPort] = app
+	}
+	app.sockets++
+	u := &udpFlowActivity{app: app, appPort: appPort}
 	if sl.udpFlows[f] == nil {
 		sl.udpFlows[f] = make(map[*udpFlowActivity]struct{})
 	}
@@ -114,6 +126,11 @@ func (s *Scheduler) trackUDP(sl *Slot, f Family) *udpFlowActivity {
 func (s *Scheduler) untrackUDP(sl *Slot, f Family, u *udpFlowActivity) {
 	s.mu.Lock()
 	delete(sl.udpFlows[f], u)
+	if u.app != nil {
+		if u.app.sockets--; u.app.sockets == 0 {
+			delete(s.apps, u.appPort)
+		}
+	}
 	s.mu.Unlock()
 }
 
@@ -163,7 +180,8 @@ type Scheduler struct {
 	slots    []*Slot
 	auto     bool
 	gameMode bool
-	limits   map[string]float64 // adapter name -> Mbit/s, 0 or absent = unlimited
+	apps     map[uint16]*appPeers // UDP peers per application port, guarded by mu
+	limits   map[string]float64   // adapter name -> Mbit/s, 0 or absent = unlimited
 	now      func() time.Time
 
 	coolOn   atomic.Bool // phone cooling, opt-in, see phone.go
@@ -385,6 +403,9 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			in, out := sl.bytesIn[f].Load(), sl.bytesOut[f].Load()
 			sl.rateIn[f] = float64(in-sl.lastIn[f]) / sec
 			sl.rateOut[f] = float64(out-sl.lastOut[f]) / sec
+			if in != sl.lastIn[f] {
+				sl.heard[f] = now
+			}
 			sl.lastIn[f], sl.lastOut[f] = in, out
 			r := sl.rateIn[f] + sl.rateOut[f]
 			// A link that was given fewer busy flows than the others only shows what those flows
@@ -436,7 +457,11 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			if live < 2 || !measured {
 				sl.weight[f] = 1
 			} else {
-				sl.weight[f] = math.Max(minWeight, sl.peak[f]/maxPeak)
+				floor := minWeight
+				if lim := sl.limitMbps(); lim > 0 { // slow because capped: the floor must not lift it
+					floor = math.Max(0.05, math.Min(minWeight, lim*bytesPerMbit/maxPeak))
+				}
+				sl.weight[f] = math.Max(floor, sl.peak[f]/maxPeak)
 			}
 		}
 	}
@@ -558,7 +583,7 @@ func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
 	if up {
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
-	} else if sl.rateIn[f] < minMeasuredPeak {
+	} else if sl.rateIn[Fam4]+sl.rateIn[Fam6] < minMeasuredPeak {
 		sl.state[f] = stateDown
 	}
 }

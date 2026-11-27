@@ -75,10 +75,38 @@ type udpFlowActivity struct {
 	started, lastActive       time.Time
 	packets, smallPkts, bytes int64
 
-	// Who the socket talks to, over the current and the last peerWindow.
-	peers     map[netip.AddrPort]struct{}
-	peersAt   time.Time
-	lastPeers int
+	app     *appPeers // shared by every socket of the same application port
+	appPort uint16
+}
+
+// appPeers is who one application port talks to, over the current and the last peerWindow.
+type appPeers struct {
+	sockets int // guarded by Scheduler.mu
+
+	mu    sync.Mutex
+	peers map[netip.AddrPort]struct{}
+	since time.Time
+	last  int
+}
+
+func (p *appPeers) add(peer netip.AddrPort, now time.Time) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if now.Sub(p.since) > peerWindow {
+		p.last, p.peers, p.since = len(p.peers), nil, now
+	}
+	if len(p.peers) <= gamePeers {
+		if p.peers == nil {
+			p.peers = map[netip.AddrPort]struct{}{}
+		}
+		p.peers[peer] = struct{}{}
+	}
+}
+
+func (p *appPeers) count() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return max(len(p.peers), p.last)
 }
 
 // A game or call talks to a few peers. A torrent client's DHT sends the same kind of small, steady
@@ -100,16 +128,12 @@ func (u *udpFlowActivity) record(n int, addr net.Addr, now time.Time) {
 		u.packets = 0
 		u.smallPkts = 0
 		u.bytes = 0
-		u.peers, u.lastPeers, u.peersAt = nil, 0, now
 	}
-	if now.Sub(u.peersAt) > peerWindow {
-		u.lastPeers, u.peers, u.peersAt = len(u.peers), nil, now
-	}
-	if ua, ok := addr.(*net.UDPAddr); ok && len(u.peers) <= gamePeers {
-		if u.peers == nil {
-			u.peers = map[netip.AddrPort]struct{}{}
+	if ua, ok := addr.(*net.UDPAddr); ok {
+		if u.app == nil {
+			u.app = &appPeers{}
 		}
-		u.peers[ua.AddrPort()] = struct{}{}
+		u.app.add(ua.AddrPort(), now)
 	}
 	if now.After(u.lastActive) {
 		u.lastActive = now
@@ -129,7 +153,7 @@ func (u *udpFlowActivity) isGameLike(now time.Time) bool {
 	if u.started.IsZero() || now.Sub(u.lastActive) > 3*time.Second {
 		return false
 	}
-	if max(len(u.peers), u.lastPeers) > gamePeers {
+	if u.app != nil && u.app.count() > gamePeers {
 		return false
 	}
 	dur := now.Sub(u.started).Seconds()
@@ -176,7 +200,7 @@ func (c *slotPacketConn) WriteTo(p []byte, a net.Addr) (int, error) {
 // ListenUDP opens a UDP socket pinned to one NIC (a UDP "flow" = the socket, so every datagram
 // of that flow leaves the same way). UDP flows are short and numerous (DNS), so they don't hold
 // a balancing slot: the pick still spreads them via the scheduler's tie-breaking.
-func (b *Balancer) ListenUDP(ctx context.Context, f Family) (net.PacketConn, error) {
+func (b *Balancer) ListenUDP(ctx context.Context, f Family, appPort uint16) (net.PacketConn, error) {
 	network := "udp4"
 	if f == Fam6 {
 		network = "udp6"
@@ -199,7 +223,7 @@ func (b *Balancer) ListenUDP(ctx context.Context, f Family) (net.PacketConn, err
 			lastErr = err
 			continue
 		}
-		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f, s: b.S, udp: b.S.trackUDP(sl, f)}, nil
+		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f, s: b.S, udp: b.S.trackUDP(sl, f, appPort)}, nil
 	}
 }
 
