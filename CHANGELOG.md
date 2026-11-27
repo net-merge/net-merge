@@ -6,6 +6,9 @@ entry here before pushing a version tag.
 ## [Unreleased]
 
 ### Added
+- **Check For Updates**, a tick box in the menu, on by default. When a newer release is out the version
+  line says *(Update Available)*, and clicking it opens net-merge.org, where the download and the install
+  command for your computer are. Untick the box to stop the check.
 - **Game Mode**, a new menu item, off unless you tick it. While a
   connection carries a game or a voice call, new connections go over your other ones. The choice is
   remembered, also when net-merge starts at sign-in.

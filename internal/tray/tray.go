@@ -8,6 +8,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 
@@ -21,7 +22,6 @@ import (
 	"net-merge/internal/provider"
 	"net-merge/internal/state"
 	"net-merge/internal/tun"
-	"net-merge/internal/update"
 )
 
 const trayRows = 4 // adapters shown in the menu; extra rows stay hidden
@@ -60,6 +60,9 @@ type trayUI struct {
 	header, toggleItem, v6Item, autoItem, signInItem *menuItem
 	coolItem, gameItem                               *menuItem
 	versionItem                                      *menuItem
+	updatesItem                                      *menuItem
+	checkUpdates, updateShown                        atomic.Bool
+	recheck                                          chan struct{}
 	rows                                             []*menuItem
 	lastOn                                           *bool
 	lastHeader                                       string
@@ -121,12 +124,16 @@ func (u *trayUI) setupMenu() *menuItem {
 	u.autoItem = addMenuItemCheckbox("Auto-Pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
 	u.coolItem = addMenuItemCheckbox("Cool Down Phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
 	u.signInItem = addMenuItemCheckbox("Start at Sign-In", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
+	settings, _ := state.LoadSettings(u.stateDir) // a bad file was already reported at start
+	u.checkUpdates.Store(!settings.NoUpdateCheck)
+	u.recheck = make(chan struct{}, 1)
+	u.updatesItem = addMenuItemCheckbox("Check For Updates", "Asks GitHub for the newest release number at start and every 6 hours.", !settings.NoUpdateCheck)
 	u.toggleItem = addMenuItem("Start Merging", "")
-	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
+	u.versionItem = addMenuItem(versionLabel(u.version), versionTip)
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
 	for it, name := range map[*menuItem]string{
 		u.header: "speed", u.ispItem: "isp", u.v6Item: "globe", u.gameItem: "game",
-		u.autoItem: "link", u.coolItem: "cool", u.signInItem: "person", u.toggleItem: "play",
+		u.autoItem: "link", u.coolItem: "cool", u.signInItem: "person", u.updatesItem: "sync", u.toggleItem: "play",
 		u.versionItem: "info", quit: "power",
 	} {
 		setSymbol(it, name)
@@ -211,8 +218,22 @@ func (u *trayUI) onReady() {
 					u.coolItem.Uncheck()
 				}
 				u.sched.SetPhoneCooling(u.coolItem.Checked())
+			case <-u.updatesItem.ClickedCh:
+				on := !u.updatesItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.NoUpdateCheck = !on }); err != nil {
+					u.lastErr = "check for updates: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+					continue
+				}
+				if on {
+					u.updatesItem.Check()
+				} else {
+					u.updatesItem.Uncheck()
+				}
+				u.setUpdateCheck(on)
 			case <-u.versionItem.ClickedCh:
-				if err := platform.OpenURL(update.ReleasesURL); err != nil {
+				if err := platform.OpenURL(u.versionURL()); err != nil {
 					logx.Printf("error: opening the release page: %v\n", err)
 				}
 			case c := <-u.limitClicks:
@@ -482,8 +503,8 @@ func versionLabel(v string) string {
 	return withV(v)
 }
 
-// updateLabel replaces the version line once GitHub has a newer release.
-func updateLabel(latest string) string { return "Update to " + withV(latest) }
+// updateLabel is the version line once GitHub has a newer release.
+func updateLabel(running string) string { return versionLabel(running) + " (Update Available)" }
 
 // withV adds the "v" that releases are tagged with, unless the build says "dev" or has one already.
 func withV(v string) string {

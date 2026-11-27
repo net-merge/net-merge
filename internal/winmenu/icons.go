@@ -76,8 +76,10 @@ func iconForItem(title string, hasSub bool, kind string) string {
 		return iconCool
 	case title == "Start at Sign-In":
 		return iconPerson
-	case strings.HasPrefix(title, "Update to"):
+	case strings.HasSuffix(title, "(Update Available)"):
 		return iconDownload
+	case title == "Check For Updates":
+		return iconSync
 	case title == "dev", isVersion(title):
 		return iconInfo
 	case title == "Quit":

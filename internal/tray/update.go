@@ -19,27 +19,49 @@ const (
 	updateMax   = 30 * time.Minute
 )
 
-// watchUpdates turns the version line into "Update to vX" when GitHub has a newer release. It stays
-// quiet when offline: the check is a convenience, not something to warn about.
+// watchUpdates adds "(Update Available)" to the version line when GitHub has a newer release, while
+// Check For Updates is ticked. It stays quiet when offline: the check is a convenience, not something
+// to warn about.
 func (u *trayUI) watchUpdates() {
 	if !update.IsVersion(u.version) { // a build from source says "dev": nothing to compare
 		return
 	}
 	retry := updateRetry
 	for {
-		latest, err := latestRelease()
-		if err != nil {
-			logx.Printf("update check: %v (next try in %s)\n", err, retry)
-			time.Sleep(retry)
-			retry = min(2*retry, updateMax)
-			continue
+		wait := updateEvery
+		if u.checkUpdates.Load() {
+			latest, err := latestRelease()
+			if err != nil {
+				logx.Printf("update check: %v (next try in %s)\n", err, retry)
+				wait, retry = retry, min(2*retry, updateMax)
+			} else {
+				retry = updateRetry                                           // a success means the network works again
+				if update.Newer(u.version, latest) && u.checkUpdates.Load() { // not unticked meanwhile
+					u.showUpdate(latest)
+				}
+			}
 		}
-		if update.Newer(u.version, latest) {
-			u.showUpdate(latest)
+		select {
+		case <-u.recheck: // the box was ticked again
+		case <-time.After(wait):
 		}
-		retry = updateRetry // a success means the network works again
-		time.Sleep(updateEvery)
 	}
+}
+
+// setUpdateCheck applies the Check For Updates box: off, nothing is asked and nothing is offered.
+func (u *trayUI) setUpdateCheck(on bool) {
+	u.checkUpdates.Store(on)
+	if on {
+		select {
+		case u.recheck <- struct{}{}:
+		default:
+		}
+		return
+	}
+	u.updateShown.Store(false)
+	u.versionItem.SetTitle(versionLabel(u.version))
+	u.versionItem.SetTooltip(versionTip)
+	setSymbol(u.versionItem, "info")
 }
 
 // latestRelease asks GitHub with a deadline: the tray must never wait on the network.
@@ -49,10 +71,21 @@ func latestRelease() (string, error) {
 	return update.Latest(ctx)
 }
 
-// showUpdate keeps the version in the tooltip, so a bug report still has it.
+const versionTip = "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub."
+
+// showUpdate keeps the version on the line, so a bug report still has it.
 func (u *trayUI) showUpdate(latest string) {
 	logx.Printf("update check: %s is available\n", latest)
-	u.versionItem.SetTitle(updateLabel(latest))
-	u.versionItem.SetTooltip("You are running " + versionLabel(u.version) +
-		". Click to open the " + versionLabel(latest) + " release page on GitHub.")
+	u.updateShown.Store(true)
+	u.versionItem.SetTitle(updateLabel(u.version))
+	u.versionItem.SetTooltip(versionLabel(latest) + " is out. Click to open net-merge.org and update.")
+	setSymbol(u.versionItem, "download")
+}
+
+// versionURL is where a click on the version line goes.
+func (u *trayUI) versionURL() string {
+	if u.updateShown.Load() {
+		return update.HomeURL
+	}
+	return update.ReleasesURL
 }

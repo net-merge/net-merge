@@ -21,7 +21,8 @@ func TestIconFollowsTheEntryName(t *testing.T) {
 		{"Pause Merging", false, iconPause},
 		{"v0.3.6", false, iconInfo},
 		{"dev", false, iconInfo},
-		{"Update to v0.3.7", false, iconDownload},
+		{"v0.3.7 (Update Available)", false, iconDownload},
+		{"Check For Updates", false, iconSync},
 		{"Quit", false, iconPower},
 
 		{"Wi-Fi:  ↓79 ↑7.0 Mbps  (31 flows via net-merge)  +IPv6", true, iconWifi},

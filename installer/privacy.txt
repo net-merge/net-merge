@@ -7,6 +7,7 @@ connects to:
     to see whether each of your connections has internet.
 
   - api.github.com: the tray reads the newest release number, at start and every 6 hours.
+    Untick "Check For Updates" in the tray menu to stop it.
 
   - ipwho.is, or ipinfo.io if that fails: the tray asks who provides each connection, to show the
     provider's name. The service sees that connection's public IP address. This is on by default.

@@ -17,6 +17,8 @@ type Settings struct {
 	PhoneCooling bool `json:"phone_cooling"`
 	// GameMode keeps new connections off a link that carries a game or a call (engine/flowconn.go).
 	GameMode bool `json:"game_mode"`
+	// NoUpdateCheck is the unticked Check For Updates box. Stored the negative way: on by default.
+	NoUpdateCheck bool `json:"no_update_check"`
 }
 
 type settingsFile struct {

@@ -69,6 +69,18 @@ func menuGlyph(name string) (lines [][4]float64) {
 		circle(16, 16, 12)
 		line(16, 15, 16, 22)
 		line(16, 10, 16, 10)
+	case "sync": // two arrows chasing each other
+		arc(16, 16, 11, 11, 200, 330)
+		line(26, 6, 26, 11)
+		line(26, 11, 21, 11)
+		arc(16, 16, 11, 11, 20, 150)
+		line(6, 26, 6, 21)
+		line(6, 21, 11, 21)
+	case "download":
+		line(16, 4, 16, 20)
+		line(9, 14, 16, 21)
+		line(23, 14, 16, 21)
+		line(6, 27, 26, 27)
 	case "power":
 		arc(16, 17, 11, 11, -55, 235)
 		line(16, 3, 16, 15)
