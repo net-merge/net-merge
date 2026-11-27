@@ -48,7 +48,7 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 
 | Windows: hover the icon | Windows: the menu | macOS: the menu bar |
 |---|---|---|
-| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: the total, each adapter with its provider and speed, tick boxes with icons, Pause Merging, version, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause Merging, Quit](docs/tray-menu-macos.png) |
+| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: the total, each adapter with its provider and speed, tick boxes with icons, Pause Merging, version, Quit](docs/tray-menu.png) | ![macOS menu: Wi-Fi with its provider and speed, tick boxes with icons, Start Merging, version, Quit](docs/tray-menu-macos.png) |
 
 ## Adapter icons and names
 
