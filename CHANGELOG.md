@@ -22,6 +22,12 @@ entry here before pushing a version tag.
   the menu shows *cooling at 20 Mbit/s* while that lasts. The choice is remembered, also when net-merge
   starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
 
+### Changed
+- **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
+  corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or
+  dark theme, and opens in the corner by the taskbar like the Quick Settings flyout. It stays sharp at
+  any display scale and on every monitor. macOS and Linux keep their native menus.
+
 ### Fixed
 - **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
   internet check too late, so it got no new connections and merging could pause by itself, cutting

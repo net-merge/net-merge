@@ -48,13 +48,13 @@ type trayUI struct {
 
 	limitClicks chan limitClick
 	rowNames    [trayRows]string
-	limitUnlim  [trayRows]*systray.MenuItem
-	limitPreset [trayRows][]*systray.MenuItem
+	limitUnlim  [trayRows]*menuItem
+	limitPreset [trayRows][]*menuItem
 
-	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
-	coolItem, gameItem                               *systray.MenuItem
-	versionItem                                      *systray.MenuItem
-	rows                                             []*systray.MenuItem
+	header, toggleItem, v6Item, autoItem, signInItem *menuItem
+	coolItem, gameItem                               *menuItem
+	versionItem                                      *menuItem
+	rows                                             []*menuItem
 	lastOn                                           *bool
 	lastHeader                                       string
 	lastTip                                          string
@@ -69,14 +69,15 @@ func (u *trayUI) onReady() {
 	}
 	systray.SetIcon(u.iconOff)
 	systray.SetTooltip("net-merge")
-	u.header = systray.AddMenuItem("net-merge", "")
+	startMenu()
+	u.header = addMenuItem("net-merge", "")
 	u.header.Disable()
-	systray.AddSeparator()
+	addSeparator()
 	u.limitClicks = make(chan limitClick, trayRows)
 	for i := 0; i < trayRows; i++ {
-		r := systray.AddMenuItem("", "Click to cap this adapter's speed (download and upload)")
+		r := addMenuItem("", "Click to cap this adapter's speed (download and upload)")
 		u.rows = append(u.rows, r)
-		addLimit := func(mbitPerSec float64, title string) *systray.MenuItem {
+		addLimit := func(mbitPerSec float64, title string) *menuItem {
 			it := r.AddSubMenuItemCheckbox(title, limitTip(mbitPerSec), false)
 			go func() {
 				for range it.ClickedCh {
@@ -94,15 +95,15 @@ func (u *trayUI) onReady() {
 		// entries added later (when they are first checked) would appear.
 		r.Hide()
 	}
-	systray.AddSeparator()
-	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
-	u.gameItem = systray.AddMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
-	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
-	u.coolItem = systray.AddMenuItemCheckbox("Cool down phone hotspots", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
-	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
-	u.toggleItem = systray.AddMenuItem("Start merging", "")
-	u.versionItem = systray.AddMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
-	quit := systray.AddMenuItem("Quit", "Turns system-wide mode off and exits")
+	addSeparator()
+	u.v6Item = addMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.gameItem = addMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
+	u.autoItem = addMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.coolItem = addMenuItemCheckbox("Cool down phone hotspots", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
+	u.signInItem = addMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
+	u.toggleItem = addMenuItem("Start merging", "")
+	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
+	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
 	go u.watchUpdates()
 
 	go func() {
@@ -500,7 +501,7 @@ func limitTip(mbitPerSec float64) string {
 
 // showLimit ticks the cap the adapter shown in row is using.
 func (u *trayUI) showLimit(row int, mbitPerSec float64) {
-	tick := func(it *systray.MenuItem, want bool) {
+	tick := func(it *menuItem, want bool) {
 		if it != nil && it.Checked() != want {
 			if want {
 				it.Check()
