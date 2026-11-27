@@ -7,13 +7,12 @@ import (
 	"testing"
 )
 
-func TestAliasesAndOptInSurviveReload(t *testing.T) {
+func TestAliasesSurviveReload(t *testing.T) {
 	dir := t.TempDir()
 	p, err := LoadTrayPreferences(dir)
-	if err != nil || p.LookupISP || p.Aliases == nil {
+	if err != nil || p.Aliases == nil {
 		t.Fatalf("missing-file defaults: %+v %v", p, err)
 	}
-	p.LookupISP = true
 	if err := SaveTrayPreferences(dir, p); err != nil {
 		t.Fatal(err)
 	}
@@ -21,15 +20,15 @@ func TestAliasesAndOptInSurviveReload(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, err = LoadTrayPreferences(dir)
-	if err != nil || !p.LookupISP || p.Aliases["Ethernet 5"] != "خط البيت" {
+	if err != nil || p.Aliases["Ethernet 5"] != "خط البيت" {
 		t.Fatalf("lost preferences: %+v %v", p, err)
 	}
 	if err := SetAlias(dir, "Ethernet 5", ""); err != nil {
 		t.Fatal(err)
 	}
 	p, _ = LoadTrayPreferences(dir)
-	if !p.LookupISP || len(p.Aliases) != 0 {
-		t.Fatalf("removing an alias changed another preference: %+v", p)
+	if len(p.Aliases) != 0 {
+		t.Fatalf("removing an alias left it behind: %+v", p)
 	}
 	if filepath.Dir(TrayPreferencesPath(dir)) != filepath.Dir(LimitsPath(dir)) {
 		t.Fatal("aliases must live beside limits.json")

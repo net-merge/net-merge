@@ -20,14 +20,6 @@ func menuGlyph(name string) (lines [][4]float64) {
 	case "speed":
 		arc(16, 20, 12, 12, 160, 380)
 		line(16, 20, 22, 13)
-	case "isp": // a building with columns
-		line(4, 11, 16, 4)
-		line(16, 4, 28, 11)
-		line(4, 11, 28, 11)
-		for _, x := range []float64{8, 13.5, 18.5, 24} {
-			line(x, 15, x, 22)
-		}
-		line(4, 27, 28, 27)
 	case "globe":
 		circle(16, 16, 12)
 		arc(16, 16, 5.5, 12, 0, 360)

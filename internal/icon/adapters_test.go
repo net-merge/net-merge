@@ -12,7 +12,7 @@ import (
 func TestAdapterIconsUseNativeFormatsAndTemplates(t *testing.T) {
 	seen := map[string]bool{}
 	for _, kind := range []string{"wifi", "ethernet", "phone", "network",
-		"speed", "isp", "globe", "game", "link", "cool", "person", "play", "pause", "info", "power"} {
+		"speed", "globe", "game", "link", "cool", "person", "play", "pause", "info", "power"} {
 		template, regular := Adapter(kind)
 		if seen[string(regular)] {
 			t.Fatalf("%s has the same glyph as another glyph", kind)

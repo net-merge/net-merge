@@ -67,7 +67,6 @@ type trayUI struct {
 	lastRows                                         [trayRows]string
 	lastErr                                          string
 	busyUntil                                        time.Time
-	ispItem                                          *menuItem
 	prefs                                            state.TrayPreferences
 	providers                                        *provider.Resolver
 	adaptersKey                                      string
@@ -115,7 +114,6 @@ func (u *trayUI) setupMenu() *menuItem {
 		r.Hide()
 	}
 	addSeparator()
-	u.ispItem = addMenuItemCheckbox("Look up ISP names", "Ask ipwho.is (ipinfo.io as fallback) through each adapter; each service receives that adapter's public IP. Off by default.", u.prefs.LookupISP)
 	u.v6Item = addMenuItemCheckbox("Use all adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
 	u.gameItem = addMenuItemCheckbox("Game mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
 	u.autoItem = addMenuItemCheckbox("Auto-pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
@@ -125,7 +123,7 @@ func (u *trayUI) setupMenu() *menuItem {
 	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
 	for it, name := range map[*menuItem]string{
-		u.header: "speed", u.ispItem: "isp", u.v6Item: "globe", u.gameItem: "game",
+		u.header: "speed", u.v6Item: "globe", u.gameItem: "game",
 		u.autoItem: "link", u.coolItem: "cool", u.signInItem: "person", u.toggleItem: "play",
 		u.versionItem: "info", quit: "power",
 	} {
@@ -156,8 +154,6 @@ func (u *trayUI) onReady() {
 		for {
 			u.refresh()
 			select {
-			case <-u.ispItem.ClickedCh:
-				u.toggleISP()
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
 			case <-u.gameItem.ClickedCh:
@@ -416,27 +412,7 @@ func (u *trayUI) refreshMetadata(live []engine.SlotStats) {
 			}
 		}
 	}
-	u.providers.Refresh(u.adapters, u.prefs.LookupISP)
-}
-
-func (u *trayUI) toggleISP() {
-	p, err := state.LoadTrayPreferences(u.stateDir)
-	if err == nil {
-		p.LookupISP = !p.LookupISP
-		err = state.SaveTrayPreferences(u.stateDir, p)
-	}
-	if err != nil {
-		u.lastErr = "ISP lookup preference: " + err.Error()
-		logx.Printf("error: %s\n", u.lastErr)
-		return
-	}
-	u.prefs = p
-	if p.LookupISP {
-		u.ispItem.Check()
-	} else {
-		u.ispItem.Uncheck()
-	}
-	u.providers.Refresh(u.adapters, p.LookupISP) // turning off cancels pending requests now
+	u.providers.Refresh(u.adapters, true) // ISP names are always on
 }
 
 func adapterRow(s engine.SlotStats, on bool, alias, isp string) string {
