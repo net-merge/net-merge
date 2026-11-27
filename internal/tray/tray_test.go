@@ -40,6 +40,33 @@ func TestAdapterRowKeepsLiveDetailsWithAliasAndISP(t *testing.T) {
 	}
 }
 
+// The Windows 11 menu's render test (internal/winmenu/render_full_windows_test.go) draws these exact
+// rows. If adapterRow changes, change them there too, so the pictures show what the tray shows.
+func TestAdapterRowsAsTheWindowsMenuShowsThem(t *testing.T) {
+	lrm := string(rune(0x200E)) // the mark adapterRow puts after the name
+	mbit := func(m float64) float64 { return m * 125000 }
+	for _, c := range []struct {
+		s          engine.SlotStats
+		alias, isp string
+		want       string
+	}{
+		{engine.SlotStats{Name: "Ethernet 3", LinkIn: mbit(16), LinkOut: mbit(0.2), State: "up"}, "", "",
+			"Ethernet 3" + lrm + "  ↓16 ↑0.2"},
+		{engine.SlotStats{Name: "Wi-Fi", LinkIn: mbit(79), LinkOut: mbit(7), State: "up", LimitMbps: 100}, "Home", "Example ISP",
+			"Home · Example ISP" + lrm + "  ↓79 ↑7.0  max 100"},
+		{engine.SlotStats{Name: "iPhone USB", LinkIn: mbit(31), LinkOut: mbit(3.1), State: "up", CoolMbps: 20}, "", "",
+			"iPhone USB" + lrm + "  ↓31 ↑3.1  cooling 20"},
+	} {
+		if got := adapterRow(c.s, true, c.alias, c.isp); got != c.want {
+			t.Errorf("adapterRow(%s) = %q, want %q", c.s.Name, got, c.want)
+		}
+	}
+	// While paused nothing is being held back, so the cooling note is not shown.
+	if got := adapterRow(engine.SlotStats{Name: "iPhone USB", State: "up", CoolMbps: 20}, false, "", ""); strings.Contains(got, "cooling") {
+		t.Errorf("a paused row says it is cooling: %q", got)
+	}
+}
+
 func TestVersionLabel(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
 		{"0.3.3", "v0.3.3"},

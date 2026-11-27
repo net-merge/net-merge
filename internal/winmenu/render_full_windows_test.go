@@ -24,11 +24,13 @@ func fullMenu() []*Item {
 	}
 	sep := func() *Item { return &Item{sep: true} }
 	return []*Item{
-		row("Merging  ·  Total ↓126 ↑10.3 Mbps", false, false, true),
+		// These rows are what the tray writes today. TestAdapterRowsAsTheWindowsMenuShowsThem in
+		// internal/tray pins the same adapter strings to adapterRow, so a change to the format shows up there.
+		row("Merging  ·  ↓126 ↑10 Mbps", false, false, true),
 		sep(),
-		adapter("Ethernet 3"+leftToRight+"  ↓16 ↑0.2 Mbps  (12 flows via net-merge)", "ethernet"),
-		adapter("Home · Example ISP"+leftToRight+"  ↓79 ↑7.0 Mbps  limit 100 Mbit/s  (31 flows via net-merge)  +IPv6", "wifi"),
-		adapter("iPhone USB"+leftToRight+"  ↓31 ↑3.1 Mbps  cooling at 20 Mbit/s  (9 flows via net-merge)", "phone"),
+		adapter("Ethernet 3"+leftToRight+"  ↓16 ↑0.2", "ethernet"),
+		adapter("Home · Example ISP"+leftToRight+"  ↓79 ↑7.0  max 100", "wifi"),
+		adapter("iPhone USB"+leftToRight+"  ↓31 ↑3.1  cooling 20", "phone"),
 		sep(),
 		row("Show ISP Names", true, true, false),
 		row("Use All Adapters", true, true, false),
