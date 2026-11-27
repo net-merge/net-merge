@@ -603,7 +603,7 @@ net-merge is free. If it saves you time, you can [buy me a coffee](https://buyme
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/).
 
-Signing is being set up: releases up to v0.3.7 are not signed.
+Signing is being set up: releases up to v0.4.0 are not signed.
 
 - Committers and reviewers: [@rohit267](https://github.com/rohit267)
 - Approvers: [@rohit267](https://github.com/rohit267)
@@ -617,8 +617,14 @@ connects to:
   connection that sends no data, to see whether each of your connections has internet.
 - `api.github.com`: the tray reads the newest release number, at start and every 6 hours, unless you
   untick *Check For Updates*.
-- `ipwho.is`, or `ipinfo.io` if that fails: unless you untick *Show ISP Names*. The service sees that
-  connection's public IP address.
+- From v0.4.0, `ipwho.is`, or `ipinfo.io` if that fails: the tray asks who provides each connection, to
+  show the provider's name beside it. The service sees that connection's public IP address. This is on
+  by default; untick *Show ISP Names* in the menu to stop it.
+
+Their privacy policies: [Cloudflare](https://developers.cloudflare.com/1.1.1.1/privacy/public-dns-resolver/),
+[Google](https://developers.google.com/speed/public-dns/privacy),
+[GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement),
+[ipwho.is](https://ipwhois.io/privacy), [ipinfo.io](https://ipinfo.io/privacy-policy).
 
 The Linux package server, `pkg.net-merge.org`, counts how many different computers check for updates each
 day. For that it keeps a salted hash of each IP address, for that day only.

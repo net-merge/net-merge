@@ -5,66 +5,41 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-27
+
 ### Added
-- **Speed beside the icon** on macOS and Windows: `↓79 ↑7.0`, in Mbps. While merging it is all your
-  connections together, while paused your default one. Untick *Show Speed* in the menu to hide it. On
-  Windows it is a second small icon beside the app's, two rows with an arrow and a number each (download
-  on top), readable on light and dark taskbars and at 100% to 200% scale; paused it turns amber, and the
-  tooltip has the full numbers. Windows may first put a new icon under the ^ arrow: drag it onto the
-  taskbar to keep it in view.
-- **A waybar module** for Sway and Hyprland: `net-merge status -waybar` prints the speed for a custom
-  module (see Troubleshooting in the README).
-- **Check For Updates**, a tick box in the menu, on by default. When a newer release is out the version
-  line says *(Update Available)*, and clicking it opens net-merge.org/changelog: what changed, with the download
-  on top. Untick the box to stop the check.
-- **Game Mode**, a new menu item, off unless you tick it. While a
-  connection carries a game or a voice call, new connections go over your other ones. The choice is
-  remembered, also when net-merge starts at sign-in.
-- **An iPhone hotspot gets more rest, with no loss of speed.** net-merge now recognises an iPhone
-  sharing its connection, over USB or Wi-Fi, and lets its mobile radio sleep more: it checks the phone
-  for internet every 2 minutes instead of every 15 seconds (and not at all while data is arriving over
-  it), keeps idle connections on it alive every 2 minutes instead of every 30 seconds, and sends single
-  connections (a mail check, a chat message) to your other connection when that one is at least as fast
-  and not busy. A phone that is faster than your other connection keeps getting them. `net-merge list`
-  shows *(phone hotspot)*, and `-phone "Name"` treats another adapter (for example an Android phone)
-  the same way.
-- **Cool Down Phone**, a new menu item, off unless you tick it. When ticked, a phone that has
-  worked at full speed for 3 minutes is held at 20 Mbit/s until it has had a rest, so it stays cooler;
-  the menu shows *cooling 20* while that lasts. The choice is remembered, also when net-merge
-  starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
-- **Adapter icons in the tray menu.** Each adapter shows a Wi-Fi, Ethernet, phone or USB tether, or
-  generic network icon, chosen from what the system says the adapter is (on Windows 11 they are the
-  menu's own Fluent icons). The other menu rows have icons too, on macOS, Linux and Windows. It is only a picture; it never changes which adapter is used.
-- **ISP names in adapter rows.** The tray asks `ipwho.is` (or `ipinfo.io` if that fails), through each
-  adapter, who provides it, and shows the short name (*Railtel*, not the registered company name). The
-  service sees that adapter's public IP address. On by default; untick *Show ISP Names* to stop it, or
-  untick it in the Windows installer, which now shows the privacy text first.
-- **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
-  tray shows in place of the system name, and `net-merge status` and `net-merge list` beside it;
-  balancing is unchanged.
+- **A new tray menu on Windows** that looks like Windows 11's own: acrylic, rounded corners, Fluent
+  icons, light and dark. With a screen reader or high contrast on, the plain Windows menu is shown
+  instead. Thanks @misal1337 (#92).
+- **Icons on every menu row**, on Windows, macOS and Linux. Each adapter shows what it is: Wi-Fi,
+  Ethernet, phone or other. Thanks @xAlokyx (#87).
+- **Show Speed** on Windows and macOS: `↓79 ↑7.0` in Mbps beside the icon. All connections while
+  merging, your default one while paused. On Windows it is a second small icon; drag it out from under
+  the `^` arrow to keep it in view.
+- **Provider names** beside each connection (`Wi-Fi · Airtel`). The tray asks `ipwho.is`, or `ipinfo.io`
+  if that fails, which sees that connection's public IP address. On by default: untick *Show ISP Names*,
+  untick it in the Windows installer, or run `net-merge isp-names off`.
+- **Your own names for adapters:** `net-merge alias <adapter> [name]`. Thanks @xAlokyx (#87).
+- **Game Mode** (off by default): while a connection carries a game or a call, new connections go over
+  your other ones. Thanks @Xrc375 (#86).
+- **iPhone hotspots rest more, at no cost in speed:** fewer checks and keep-alives, and small connections
+  go to your other link when it is at least as fast. *Cool Down Phone* (off by default) also holds a
+  hard-working phone to 20 Mbit/s until it has had a rest. Thanks @La2o (#82).
+- **Check For Updates** (on by default): the version line says *(Update Available)* and opens
+  [net-merge.org/changelog](https://net-merge.org/changelog).
+- **A waybar module** for Sway and Hyprland: `net-merge status -waybar` (see Troubleshooting in the README).
+- The Windows installer shows a privacy page first.
 
 ### Changed
-- **A shorter tray menu.** Rows show just the name and speeds (`↓79 ↑7.0`, in Mbps as on the top line),
-  with *max 20* or *cooling 20* when capped. The tick boxes have short names: *Use All Adapters*,
-  *Auto-Pause*, *Game Mode*, *Cool Down Phone*, *Show ISP Names*. Hover one to read what it does.
-  `net-merge status` still shows how many connections each adapter carries.
-- **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
-  corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or
-  dark theme, and opens in the corner by the taskbar like the Quick Settings flyout. It stays sharp at
-  any display scale and on every monitor. macOS and Linux keep their native menus.
+- **A shorter tray menu.** Rows show just the name and speeds, with *max 20* or *cooling 20* when
+  capped. The tick boxes have short names; hover one to read what it does. `net-merge status` still
+  shows how many connections each adapter carries.
 
 ### Fixed
-- **Running the install command again now updates** on dnf, yum and apk too, and restarts a running tray
-  on Linux.
-- **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
-  internet check too late, so it got no new connections and merging could pause by itself, cutting
-  every open download. While a download is arriving, or an upload is being acknowledged, a failed check is now
-  ignored.
-- **Merging no longer gets stuck on one connection.** If one connection happened to carry a big
-  download while the other only loaded web pages, the second looked much slower than it was and got
-  almost no new connections, so it never showed its real speed. Merging stayed one-sided until it was
-  paused and started again. Now a connection that looks slower still gets a share of new connections,
-  so a wrong guess is corrected within seconds.
+- **Merging no longer gets stuck on one connection** after a lopsided start. Thanks @misal1337 (#93).
+- **A full connection is no longer treated as offline.** A busy link could answer the internet check too
+  late, get no new connections, and merging could pause by itself, cutting open downloads (#81).
+- **Running the install command again now updates** on dnf, yum and apk too.
 
 ## [0.3.7] - 2026-11-09
 
