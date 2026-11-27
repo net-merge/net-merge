@@ -8,7 +8,7 @@ const lrm = leftToRight
 func TestNewMenuItemsHaveIcons(t *testing.T) {
 	for _, c := range []struct{ title, want string }{
 		{"Game Mode", iconGame},
-		{"Cool down phone", iconCool},
+		{"Cool Down Phone", iconCool},
 	} {
 		if got := iconFor(c.title, false); got != c.want || got == "" {
 			t.Errorf("iconFor(%q) = %q, want %q", c.title, got, c.want)
@@ -16,9 +16,9 @@ func TestNewMenuItemsHaveIcons(t *testing.T) {
 	}
 	icons := map[string]string{}
 	for _, title := range []string{
-		"Game Mode", "Cool down phone",
-		"Use all adapters", "Auto-pause",
-		"Start at sign-in", "Start merging", "Quit",
+		"Game Mode", "Cool Down Phone",
+		"Use All Adapters", "Auto-Pause",
+		"Start at Sign-In", "Start Merging", "Quit",
 	} {
 		g := iconFor(title, false)
 		if other, dup := icons[g]; dup {

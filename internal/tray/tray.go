@@ -114,12 +114,12 @@ func (u *trayUI) setupMenu() *menuItem {
 		r.Hide()
 	}
 	addSeparator()
-	u.v6Item = addMenuItemCheckbox("Use all adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.v6Item = addMenuItemCheckbox("Use All Adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
 	u.gameItem = addMenuItemCheckbox("Game Mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
-	u.autoItem = addMenuItemCheckbox("Auto-pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
-	u.coolItem = addMenuItemCheckbox("Cool down phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
-	u.signInItem = addMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
-	u.toggleItem = addMenuItem("Start merging", "")
+	u.autoItem = addMenuItemCheckbox("Auto-Pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.coolItem = addMenuItemCheckbox("Cool Down Phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
+	u.signInItem = addMenuItemCheckbox("Start at Sign-In", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
+	u.toggleItem = addMenuItem("Start Merging", "")
 	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
 	for it, name := range map[*menuItem]string{
@@ -292,7 +292,7 @@ func (u *trayUI) turn(on bool) {
 		state.Clear(u.stateDir)
 		return
 	}
-	u.setHeader("Turning on...")
+	u.setHeader("Turning On...")
 	if err := u.tun.On(); err != nil {
 		u.lastErr = err.Error()
 		logx.Printf("error: %v\n", err)
@@ -322,11 +322,11 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 	if u.lastOn == nil || *u.lastOn != on {
 		if on {
 			systray.SetIcon(u.iconOn)
-			u.toggleItem.SetTitle("Pause merging")
+			u.toggleItem.SetTitle("Pause Merging")
 			setSymbol(u.toggleItem, "pause")
 		} else {
 			systray.SetIcon(u.iconOff)
-			u.toggleItem.SetTitle("Start merging")
+			u.toggleItem.SetTitle("Start Merging")
 			setSymbol(u.toggleItem, "play")
 		}
 		u.lastOn = &on
@@ -341,7 +341,7 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 	}
 	state := stateWord(on)
 	if !on && u.ap.enabled && u.ap.waiting && !u.ap.manualOff {
-		state = "Paused: one connection"
+		state = "Paused: One Connection"
 	}
 
 	if u.lastErr != "" {

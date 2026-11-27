@@ -17,7 +17,7 @@ entry here before pushing a version tag.
   and not busy. A phone that is faster than your other connection keeps getting them. `net-merge list`
   shows *(phone hotspot)*, and `-phone "Name"` treats another adapter (for example an Android phone)
   the same way.
-- **Cool down phone**, a new menu item, off unless you tick it. When ticked, a phone that has
+- **Cool Down Phone**, a new menu item, off unless you tick it. When ticked, a phone that has
   worked at full speed for 3 minutes is held at 20 Mbit/s until it has had a rest, so it stays cooler;
   the menu shows *cooling 20* while that lasts. The choice is remembered, also when net-merge
   starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
@@ -31,8 +31,8 @@ entry here before pushing a version tag.
 
 ### Changed
 - **A shorter tray menu.** Rows show just the name and speeds (`↓79 ↑7.0`, in Mbps as on the top line),
-  with *max 20* or *cooling 20* when capped. The tick boxes have short names: *Use all adapters*,
-  *Auto-pause*, *Game Mode*, *Cool down phone*. Hover one to read what it does.
+  with *max 20* or *cooling 20* when capped. The tick boxes have short names: *Use All Adapters*,
+  *Auto-Pause*, *Game Mode*, *Cool Down Phone*. Hover one to read what it does.
   `net-merge status` still shows how many connections each adapter carries.
 - **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
   corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or

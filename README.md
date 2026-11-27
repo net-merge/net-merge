@@ -48,7 +48,7 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 
 | Windows: hover the icon | Windows: the menu | macOS: the menu bar |
 |---|---|---|
-| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: total, each adapter's speed and flows, IPv6 option, Pause merging, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause merging, Quit](docs/tray-menu-macos.png) |
+| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: total, each adapter's speed and flows, IPv6 option, Pause Merging, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause Merging, Quit](docs/tray-menu-macos.png) |
 
 ## Adapter icons and names
 
@@ -96,7 +96,7 @@ and double-click it instead.
 
 That's it: net-merge is installed and its icon appears in the menu bar or tray. On Linux the script
 uses your package manager (apt, dnf, zypper, apk or pacman) and on macOS Homebrew when you have it, so
-net-merge updates with the rest of your system. To start it at sign-in, tick *Start at sign-in* in its menu.
+net-merge updates with the rest of your system. To start it at sign-in, tick *Start at Sign-In* in its menu.
 
 **Android**: see [Android](#android) below.
 
@@ -351,13 +351,13 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
 1. Start net-merge. A tray icon appears (menu bar on Mac).
 2. The icon is **green** when it is merging and **grey** when it is paused.
 3. **It pauses by itself** when fewer than two connections have internet, because there is nothing to
-   merge, and the menu says *Paused: one connection*. It **starts again by itself** when a second
+   merge, and the menu says *Paused: One Connection*. It **starts again by itself** when a second
    connection works. If you pause or start it yourself, that choice wins: it will not start again after
-   you paused it. Untick *Auto-pause* in the menu to switch this off, or run
+   you paused it. Untick *Auto-Pause* in the menu to switch this off, or run
    `net-merge tray -auto-pause=false`.
 4. **Hover** the icon to see the speed of each connection and the total.
 5. **Right-click** the icon (on Mac, click it) to open the menu. It shows each connection's speed (in
-   Mbps), and the buttons *Pause merging* / *Start merging* and *Quit*. The
+   Mbps), and the buttons *Pause Merging* / *Start Merging* and *Quit*. The
    line above *Quit* is the version you are running, like `v0.3.3`. It reads the newest release number
    from GitHub (at start, and again every 6 hours) and turns into *Update to v0.3.4* if there is one;
    click it to open the release page. Click a connection to cap it at 1, 2, 5, 10, 20, 50 or 100 Mbit/s
@@ -374,7 +374,7 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
      example 5G next to slow broadband, still gets them. Once several connections are busy, the phone
      joins in as usual.
 
-   **Cool down phone** in the menu is off unless you tick it. Ticked, a download gets the
+   **Cool Down Phone** in the menu is off unless you tick it. Ticked, a download gets the
    phone's full speed for the first 3 minutes; after that the phone is held at 20 Mbit/s and the menu
    shows *cooling 20*, until it has had a 3-minute rest. This costs speed, so it is your choice;
    it is remembered after a restart. `net-merge tray -phone-cool 10` changes the 20, and
@@ -383,7 +383,7 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
    connection carries a game or a voice call (a steady stream of small UDP packets for a few seconds), new
    connections go over your other ones. Nothing is slowed down and open downloads stay where they are. It
    is remembered after a restart.
-8. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
+8. To start it at sign-in: tick *Start at Sign-In* in the menu (or the box in the Windows installer, or run
    `net-merge autostart on`). On a Mac this needs `sudo net-merge install` once.
 
 Tips:
@@ -397,7 +397,7 @@ Tips:
   Firefox has no such setting; for big files use a download manager, for example `aria2c -x 8 -s 8 <link>`.
   Splitting only helps when the server allows downloading parts of a file, which most large download
   sites do.
-- Leave *Use all adapters* ticked. Untick it only if you must reach a
+- Leave *Use All Adapters* ticked. Untick it only if you must reach a
   site that only has IPv6.
 - `net-merge list` shows which connections are used and why others are skipped. `net-merge status`
   shows live numbers.
@@ -473,7 +473,7 @@ Start net-merge first, then connect the phone. If it vanishes, click **Apply** i
 
 A phone sharing its mobile data at full speed for a long time gets warm, more so while it also charges
 over the cable. net-merge cannot read the phone's temperature, so it limits the work instead: tick
-*Cool down phone* in the menu (see [Use it](#use-it)). That costs some speed on long downloads.
+*Cool Down Phone* in the menu (see [Use it](#use-it)). That costs some speed on long downloads.
 
 Still too warm? Give the phone less to do:
 
@@ -502,13 +502,13 @@ The apps are not code-signed yet. On macOS run `xattr -d com.apple.quarantine ne
 </details>
 
 <details>
-<summary><strong>The menu says "Paused: one connection"</strong></summary>
+<summary><strong>The menu says "Paused: One Connection"</strong></summary>
 <br>
 
 net-merge only has something to do with two or more connections that have internet, so it waits. Plug
 in or connect the second one (see *Add a second connection*) and it starts by itself after a few seconds.
-To merge anyway, choose *Start merging* (it then stays on until a second connection has come and gone), or
-untick *Auto-pause*.
+To merge anyway, choose *Start Merging* (it then stays on until a second connection has come and gone), or
+untick *Auto-Pause*.
 
 Switching merging on or off cuts the connections that are open at that moment, which is why it waits 10
 seconds with nothing moving before pausing (2 minutes if a download or upload is still going) and

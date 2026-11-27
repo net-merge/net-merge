@@ -32,7 +32,7 @@ const (
 const leftToRight = string(rune(0x200E))
 
 // iconFor picks a row's icon from its title. Titles change while the menu runs, so this is asked each
-// time a row is drawn: "Start merging" and "Pause merging" swap icons by themselves. A row with no icon,
+// time a row is drawn: "Start Merging" and "Pause Merging" swap icons by themselves. A row with no icon,
 // like a speed limit in a submenu, returns "" and shows its check mark on the left instead.
 func iconFor(title string, hasSub bool) string { return iconForItem(title, hasSub, "") }
 
@@ -53,25 +53,25 @@ func iconForItem(title string, hasSub bool, kind string) string {
 	switch {
 	case strings.HasPrefix(title, "Merging"):
 		return iconSpeed
-	case strings.HasPrefix(title, "Paused"), title == "Pause merging":
+	case strings.HasPrefix(title, "Paused"), title == "Pause Merging":
 		return iconPause
 	case strings.HasPrefix(title, "Error"):
 		return iconWarning
-	case strings.HasPrefix(title, "Turning on"):
+	case strings.HasPrefix(title, "Turning On"):
 		return iconSync
 	case title == "net-merge":
 		return iconNetwork
-	case title == "Start merging":
+	case title == "Start Merging":
 		return iconPlay
-	case strings.HasPrefix(title, "Use all adapters"):
+	case strings.HasPrefix(title, "Use All Adapters"):
 		return iconGlobe
 	case title == "Game Mode":
 		return iconGame
-	case title == "Auto-pause":
+	case title == "Auto-Pause":
 		return iconLink
-	case strings.HasPrefix(title, "Cool down"):
+	case strings.HasPrefix(title, "Cool Down"):
 		return iconCool
-	case title == "Start at sign-in":
+	case title == "Start at Sign-In":
 		return iconPerson
 	case strings.HasPrefix(title, "Update to"):
 		return iconDownload
