@@ -492,3 +492,21 @@ func TestUpdateDropsVanishedWhenIdle(t *testing.T) {
 		t.Fatal("NIC should be dropped once idle")
 	}
 }
+
+// A full mobile link answers a probe too late. While data is still arriving it is not offline.
+func TestFailedProbeIgnoredWhileDataArrives(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam4, true)
+	a.bytesIn[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateUp {
+		t.Fatalf("busy link marked %q", a.state[Fam4])
+	}
+	s.Tick(time.Second) // nothing arrived: now the failure counts
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateDown {
+		t.Fatalf("quiet link left %q", a.state[Fam4])
+	}
+}

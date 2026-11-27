@@ -5,6 +5,11 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Fixed
+- **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
+  internet check too late, so it got no new connections and merging could pause by itself, cutting
+  every open download. While data is still arriving, a failed check is now ignored.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed

@@ -478,14 +478,15 @@ func (s *Scheduler) ReleaseFor(sl *Slot, f Family) {
 	sl.actF[f].Add(-1)
 }
 
-// SetState records a probe result. A passing probe also clears any link-error cooldown.
+// SetState records a probe result. A passing probe also clears any link-error cooldown. A failed
+// one is ignored while data is still arriving: a full link answers too late to pass the probe.
 func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if up {
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
-	} else {
+	} else if sl.rateIn[f] < minMeasuredPeak {
 		sl.state[f] = stateDown
 	}
 }
