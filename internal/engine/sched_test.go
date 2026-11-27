@@ -350,8 +350,8 @@ func TestAutoWeightsArePerFamily(t *testing.T) {
 		sb.bytesIn[Fam6].Add(100 * mbit)
 		s.Tick(time.Second)
 	}
-	if got := sb.weight[Fam4] / sa.weight[Fam4]; got > 0.06 {
-		t.Fatalf("slow v4 path should be down-weighted to ~0.05, got ratio %.2f", got)
+	if got := sb.weight[Fam4] / sa.weight[Fam4]; got > minWeight+0.01 {
+		t.Fatalf("slow v4 path should be down-weighted to the floor, got ratio %.2f", got)
 	}
 	if got := sb.weight[Fam6] / sa.weight[Fam6]; got < 0.95 {
 		t.Fatalf("fast v6 path must keep full weight, got ratio %.2f", got)
@@ -376,7 +376,7 @@ func TestPessimisticEstimateRecoversWhileIdle(t *testing.T) {
 		sb.bytesIn[Fam4].Add(5 * mbit)
 		s.Tick(time.Second)
 	}
-	if w := sb.weight[Fam4] / sa.weight[Fam4]; w > 0.06 {
+	if w := sb.weight[Fam4] / sa.weight[Fam4]; w > minWeight+0.01 {
 		t.Fatalf("setup: B should be down-weighted, ratio %.2f", w)
 	}
 	for i := 0; i < 80; i++ { // then nobody uses B, and A keeps working
@@ -490,5 +490,203 @@ func TestUpdateDropsVanishedWhenIdle(t *testing.T) {
 	s.Update(nil)
 	if len(s.Snapshot()) != 0 {
 		t.Fatal("NIC should be dropped once idle")
+	}
+}
+
+// A full mobile link answers a probe too late. While data is still arriving it is not offline.
+func TestFailedProbeIgnoredWhileDataArrives(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam4, true)
+	a.bytesIn[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateUp {
+		t.Fatalf("busy link marked %q", a.state[Fam4])
+	}
+	s.Tick(time.Second) // nothing arrived: now the failure counts
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateDown {
+		t.Fatalf("quiet link left %q", a.state[Fam4])
+	}
+}
+
+func TestGameModeSteersNewFlows(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4, 40000)
+	for i := 0; i < 12; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 20; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive")
+	}
+	for i := 0; i < 10; i++ {
+		got := s.Acquire(nil)
+		if got == nil || got.Name != "eth1" {
+			t.Fatalf("got %v", got)
+		}
+		s.Release(got)
+	}
+}
+
+func TestGameModeActivityWindowAndIgnoredPorts(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4, 40000)
+
+	// Background DNS/QUIC probes followed by a 60s idle gap must neither trigger nor taint the socket.
+	u.record(64, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53}, now)
+	u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 443}, now)
+	now = now.Add(60 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 inactive after background probes and idle gap")
+	}
+
+	// Sustaining small UDP packets for 6s should start a fresh window and steer new TCP flows to eth1.
+	for i := 0; i < 6; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 10; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive after 6s active burst")
+	}
+	if got := s.Acquire(nil); got == nil || got.Name != "eth1" {
+		t.Fatalf("expected steering to eth1, got %v", got)
+	} else {
+		s.Release(got)
+	}
+
+	// Idle >3s should clear gameActive.
+	now = now.Add(4 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 gameActive cleared after >3s idle")
+	}
+}
+
+// A torrent client's DHT also sends small packets steadily, but to far more peers than a game.
+func TestManyPeersIsNotAGame(t *testing.T) {
+	now := time.Now()
+	u := &udpFlowActivity{}
+	for i := range 300 {
+		now = now.Add(100 * time.Millisecond)
+		u.record(120, &net.UDPAddr{IP: net.IPv4(10, 1, byte(i>>8), byte(i)), Port: 6881}, now)
+		if i > 60 && u.isGameLike(now) {
+			t.Fatalf("taken for a game after %d packets to %d peers", i+1, i+1)
+		}
+	}
+}
+
+// A phone on standby must not push a new flow back onto the link that carries the game.
+func TestGameModeWinsOverStandby(t *testing.T) {
+	phone := nic("phone", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{nic("wire", "10.0.0.1", 1), phone})
+	s.SetGameMode(true)
+	for _, sl := range s.slots {
+		s.SetState(sl, Fam4, true)
+	}
+	s.slots[0].peak[Fam4], s.slots[1].peak[Fam4] = 10e6, 5e6
+	s.slots[0].gameActive = true
+	if got := s.Acquire(nil); got.Name != "phone" {
+		t.Fatalf("new flow went to %s, the link with the game", got.Name)
+	}
+}
+
+// The weight floor must not lift a link that is slow because it is capped.
+func TestCappedLinkIsNotLiftedByTheFloor(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1), nic("B", "10.0.0.2", 1)})
+	s.SetAuto(true)
+	s.SetLimit("B", 1)
+	A, B := s.slots[0], s.slots[1]
+	for _, sl := range s.slots {
+		s.SetState(sl, Fam4, true)
+	}
+	A.peak[Fam4], B.peak[Fam4] = 12.5e6, 125e3
+	s.Tick(time.Second)
+	got := map[string]int{}
+	for range 9 {
+		sl := s.AcquireFor(Fam4, nil)
+		got[sl.Name]++
+		s.track(sl, Fam4)
+	}
+	if got["B"] > 1 {
+		t.Fatalf("a link capped at 1 Mbit/s got %d of 9 flows (weight %.2f)", got["B"], B.weight[Fam4])
+	}
+}
+
+// Full over IPv4 while the IPv6 probe times out is still a working link.
+func TestFailedProbeIgnoredWhileOtherFamilyReceives(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam6, true)
+	a.bytesIn[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	s.SetState(a, Fam6, false)
+	if a.state[Fam6] != stateUp {
+		t.Fatalf("busy link's IPv6 marked %q", a.state[Fam6])
+	}
+}
+
+// The tunnel opens one socket per destination, so the torrent guard counts per application port.
+func TestManySocketsFromOneAppPortAreNotAGame(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	var socks []*udpFlowActivity
+	for range 30 {
+		socks = append(socks, s.trackUDP(s.slots[0], Fam4, 6881))
+	}
+	for range 60 {
+		now = now.Add(100 * time.Millisecond)
+		for i, u := range socks {
+			u.record(120, &net.UDPAddr{IP: net.IPv4(10, 1, 0, byte(i)), Port: 6881}, now)
+		}
+	}
+	for _, u := range socks {
+		if u.isGameLike(now) {
+			t.Fatal("one of 30 peer sockets of a torrent client was taken for a game")
+		}
+	}
+	game := s.trackUDP(s.slots[0], Fam4, 50000)
+	for range 60 {
+		now = now.Add(100 * time.Millisecond)
+		game.record(120, &net.UDPAddr{IP: net.IPv4(10, 2, 0, 1), Port: 27015}, now)
+	}
+	if !game.isGameLike(now) {
+		t.Fatal("a single game socket must still count")
+	}
+}
+
+// A link filled by an upload receives little more than acknowledgements, and still works.
+func TestFailedProbeIgnoredWhileUploading(t *testing.T) {
+	s := NewScheduler([]nics.Nic{nic("A", "10.0.0.1", 1)})
+	a := s.slots[0]
+	s.SetState(a, Fam4, true)
+	a.bytesOut[Fam4].Add(1_000_000)
+	s.Tick(time.Second)
+	a.linkRateIn = 25_000 // acknowledgements, from the OS's counters
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateUp {
+		t.Fatalf("uploading link marked %q", a.state[Fam4])
+	}
+	a.linkRateIn = 0 // sending into the void: nothing comes back
+	s.SetState(a, Fam4, false)
+	if a.state[Fam4] != stateDown {
+		t.Fatalf("link that gets nothing back left %q", a.state[Fam4])
 	}
 }

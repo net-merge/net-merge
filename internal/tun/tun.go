@@ -130,7 +130,7 @@ func (p tunProxy) DialUDP(m *M.Metadata) (net.PacketConn, error) {
 	if d := m.DstIP.Unmap(); d.Is6() {
 		f = engine.Fam6
 	}
-	return p.b.ListenUDP(context.Background(), f)
+	return p.b.ListenUDP(context.Background(), f, m.SrcPort)
 }
 
 // Tun is the system-wide switch: On creates the adapter and routes, Off removes them. Both are

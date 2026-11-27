@@ -5,6 +5,42 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-27
+
+### Added
+- **A new tray menu on Windows** that looks like Windows 11's own: acrylic, rounded corners, Fluent
+  icons, light and dark. With a screen reader or high contrast on, the plain Windows menu is shown
+  instead. Thanks @misal1337 (#92).
+- **Icons on every menu row**, on Windows, macOS and Linux. Each adapter shows what it is: Wi-Fi,
+  Ethernet, phone or other. Thanks @xAlokyx (#87).
+- **Show Speed** on Windows and macOS: `↓79 ↑7.0` in Mbps beside the icon. All connections while
+  merging, your default one while paused. On Windows it is a second small icon; drag it out from under
+  the `^` arrow to keep it in view.
+- **Provider names** beside each connection (`Wi-Fi · Airtel`). The tray asks `ipwho.is`, or `ipinfo.io`
+  if that fails, which sees that connection's public IP address. On by default: untick *Show ISP Names*,
+  untick it in the Windows installer, or run `net-merge isp-names off`.
+- **Your own names for adapters:** `net-merge alias <adapter> [name]`. Thanks @xAlokyx (#87).
+- **Game Mode** (off by default): while a connection carries a game or a call, new connections go over
+  your other ones. Thanks @Xrc375 (#86).
+- **iPhone hotspots rest more, at no cost in speed:** fewer checks and keep-alives, and small connections
+  go to your other link when it is at least as fast. *Cool Down Phone* (off by default) also holds a
+  hard-working phone to 20 Mbit/s until it has had a rest. Thanks @La2o (#82).
+- **Check For Updates** (on by default): the version line says *(Update Available)* and opens
+  [net-merge.org/changelog](https://net-merge.org/changelog).
+- **A waybar module** for Sway and Hyprland: `net-merge status -waybar` (see Troubleshooting in the README).
+- The Windows installer shows a privacy page first.
+
+### Changed
+- **A shorter tray menu.** Rows show just the name and speeds, with *max 20* or *cooling 20* when
+  capped. The tick boxes have short names; hover one to read what it does. `net-merge status` still
+  shows how many connections each adapter carries.
+
+### Fixed
+- **Merging no longer gets stuck on one connection** after a lopsided start. Thanks @misal1337 (#93).
+- **A full connection is no longer treated as offline.** A busy link could answer the internet check too
+  late, get no new connections, and merging could pause by itself, cutting open downloads (#81).
+- **Running the install command again now updates** on dnf, yum and apk too.
+
 ## [0.3.7] - 2026-11-09
 
 ### Fixed

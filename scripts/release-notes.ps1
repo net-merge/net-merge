@@ -23,6 +23,7 @@ $footer = "---`n**From the same developer:**`n`n" +
     "- [RoutEngine](https://routengine.net/?utm_source=net-merge&utm_medium=release): choose the connection for each app, " +
     "and set a speed limit or data cap per app. Windows, macOS and Linux. Free for personal use.`n" +
     "- [DormHost](https://dormhost.dev/?utm_source=net-merge&utm_medium=release): put your college project online. " +
-    "Node.js, Python or Docker with a database, 30 days free."
+    "Node.js, Python or Docker with a database, 30 days free.`n`n" +
+    "[Code signing policy](https://net-merge.org/#code-signing)"
 [IO.File]::WriteAllText($path, $install + "`n`n" + $m.Groups[1].Value.Trim() + "`n`n" + $footer + "`n", (New-Object Text.UTF8Encoding $false))
 Write-Host "wrote $Out"

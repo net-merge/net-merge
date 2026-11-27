@@ -48,7 +48,17 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 
 | Windows: hover the icon | Windows: the menu | macOS: the menu bar |
 |---|---|---|
-| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: total, each adapter's speed and flows, IPv6 option, Pause merging, Quit](docs/tray-menu.png) | ![macOS menu: total 399 Mbit/s, en0 and feth0 each with their flows, Pause merging, Quit](docs/tray-menu-macos.png) |
+| ![Tooltip: Merging, speed of each adapter and the total](docs/tray-tooltip.png) | ![Menu: the total, each adapter with its provider and speed, tick boxes with icons, Pause Merging, version, Quit](docs/tray-menu.png) | ![macOS menu bar with the speed beside the icon, and the menu: Wi-Fi with its provider, tick boxes with icons, Start Merging, version, Quit](docs/tray-menu-macos.png) |
+
+## Adapter icons and names
+
+The tray menu shows a Wi-Fi, Ethernet, phone/USB tether or generic icon beside each adapter.
+**Show ISP Names** is on by default. The tray asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. Untick it to stop the lookups; untick and tick it to retry a failed one. The Windows installer asks too (silent install: `/MERGETASKS=!ispnames`), and `net-merge isp-names off` does the same from a terminal (on a Mac, with `sudo`).
+
+Give an adapter a display name with `net-merge alias "Ethernet 5" "Home connection"`.
+Remove it with `net-merge alias "Ethernet 5"`. The name appears in the tray, `status` and `list`;
+the Windows/macOS/Linux interface name and connection balancing stay the same. Add `-state-dir <dir>`
+before the adapter name if you run net-merge with a custom state directory.
 
 ## How it helps
 
@@ -64,6 +74,8 @@ spread over all your links.
 - **Smart:** faster links get more connections. A link with no internet gets none until it works again.
 - **Safe:** if net-merge crashes, your internet keeps working.
 - **Light:** about 0.18 CPU cores per 100 Mbit/s.
+- **Easy on your phone:** an iPhone hotspot's radio gets to rest more, at no cost in speed. See
+  [Use it](#use-it).
 
 ## Install
 
@@ -84,7 +96,7 @@ and double-click it instead.
 
 That's it: net-merge is installed and its icon appears in the menu bar or tray. On Linux the script
 uses your package manager (apt, dnf, zypper, apk or pacman) and on macOS Homebrew when you have it, so
-net-merge updates with the rest of your system. To start it at sign-in, tick *Start at sign-in* in its menu.
+net-merge updates with the rest of your system. To start it at sign-in, tick *Start at Sign-In* in its menu.
 
 **Android**: see [Android](#android) below.
 
@@ -331,28 +343,48 @@ macOS cannot use Android USB tethering by itself. The app **TetherKit** adds tha
 > paused. If the phone link disappears, click **Apply** in TetherKit again. The iPhone is not affected.
 
 A phone uses its mobile data, so part of your traffic goes through it while net-merge runs. Quit
-net-merge when you do not want that.
+net-merge when you do not want that. With an iPhone, small things (a mail check, a chat message) stay
+on your other connection when it is at least as fast; see [Use it](#use-it).
 
 ## Use it
 
 1. Start net-merge. A tray icon appears (menu bar on Mac).
 2. The icon is **green** when it is merging and **grey** when it is paused.
 3. **It pauses by itself** when fewer than two connections have internet, because there is nothing to
-   merge, and the menu says *Paused: one connection*. It **starts again by itself** when a second
+   merge, and the menu says *Paused: One Connection*. It **starts again by itself** when a second
    connection works. If you pause or start it yourself, that choice wins: it will not start again after
-   you paused it. Untick *Pause when there is only one connection* in the menu to switch this off, or run
+   you paused it. Untick *Auto-Pause* in the menu to switch this off, or run
    `net-merge tray -auto-pause=false`.
 4. **Hover** the icon to see the speed of each connection and the total.
-5. **Right-click** the icon (on Mac, click it) to open the menu. It shows each connection's speed, how
-   many connections net-merge gave it, and the buttons *Pause merging* / *Start merging* and *Quit*. The
-   line above *Quit* is the version you are running, like `v0.3.3`. It reads the newest release number
-   from GitHub (at start, and again every 6 hours) and turns into *Update to v0.3.4* if there is one;
-   click it to open the release page. Click a connection to cap it at 1, 2, 5, 10, 20, 50 or 100 Mbit/s
+5. **Right-click** the icon (on Mac, click it) to open the menu. It shows each connection's speed (in
+   Mbps), and the buttons *Pause Merging* / *Start Merging* and *Quit*. The
+   line above *Quit* is the version you are running, like `v0.3.3`. With *Check For Updates*
+   ticked (the default), net-merge reads the newest release number from GitHub (at start, and again every
+   6 hours) and the line says *v0.3.3 (Update Available)* if there is one; click it to open
+   [net-merge.org/changelog](https://net-merge.org/changelog): what changed, with the download. Click a connection to cap it at 1, 2, 5, 10, 20, 50 or 100 Mbit/s
    (or *Unlimited*). For any other speed, from a terminal: `net-merge limit "Ethernet 2" 25` (Mbit/s; 0 or
    `unlimited` removes the cap), and `net-merge limit` lists what is set. The cap covers its downloads and
    uploads and is remembered after a restart. Only traffic net-merge relays is capped: an app bound directly
    to an adapter (for example qBittorrent on a fixed interface) ignores it.
-6. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
+6. **Phone hotspots.** A phone that shares its mobile data gets warm when its radio never rests.
+   net-merge recognises an iPhone hotspot (USB or Wi-Fi) and always does these, which cost no speed:
+   - It checks the phone for internet every 2 minutes instead of every 15 seconds, and not at all while
+     data is arriving over it. Idle connections on it are kept alive every 2 minutes, not every 30 seconds.
+   - Single connections (a mail check, a chat message) go to your other connection when that one is at
+     least as fast as the phone and not busy. A phone that is faster than your other connection, for
+     example 5G next to slow broadband, still gets them. Once several connections are busy, the phone
+     joins in as usual.
+
+   **Cool Down Phone** in the menu is off unless you tick it. Ticked, a download gets the
+   phone's full speed for the first 3 minutes; after that the phone is held at 20 Mbit/s and the menu
+   shows *cooling 20*, until it has had a 3-minute rest. This costs speed, so it is your choice;
+   it is remembered after a restart. `net-merge tray -phone-cool 10` changes the 20, and
+   `-phone "Ethernet 5"` treats another adapter, for example an Android phone, as a phone hotspot.
+7. **Games and calls.** Tick *Game Mode* (off by default). While one
+   connection carries a game or a voice call (a steady stream of small UDP packets for a few seconds), new
+   connections go over your other ones. Nothing is slowed down and open downloads stay where they are. It
+   is remembered after a restart.
+8. To start it at sign-in: tick *Start at Sign-In* in the menu (or the box in the Windows installer, or run
    `net-merge autostart on`). On a Mac this needs `sudo net-merge install` once.
 
 Tips:
@@ -366,7 +398,7 @@ Tips:
   Firefox has no such setting; for big files use a download manager, for example `aria2c -x 8 -s 8 <link>`.
   Splitting only helps when the server allows downloading parts of a file, which most large download
   sites do.
-- Leave *Use all adapters (IPv6 only if every adapter has it)* ticked. Untick it only if you must reach a
+- Leave *Use All Adapters* ticked. Untick it only if you must reach a
   site that only has IPv6.
 - `net-merge list` shows which connections are used and why others are skipped. `net-merge status`
   shows live numbers.
@@ -437,6 +469,23 @@ Start net-merge first, then connect the phone. If it vanishes, click **Apply** i
 </details>
 
 <details>
+<summary><strong>My iPhone gets hot</strong></summary>
+<br>
+
+A phone sharing its mobile data at full speed for a long time gets warm, more so while it also charges
+over the cable. net-merge cannot read the phone's temperature, so it limits the work instead: tick
+*Cool Down Phone* in the menu (see [Use it](#use-it)). That costs some speed on long downloads.
+
+Still too warm? Give the phone less to do:
+
+- Start net-merge with a lower cool-down speed, for example `net-merge tray -phone-cool 5`.
+- Or click the phone's line in the menu and pick a fixed cap, for example 10 Mbit/s.
+
+`net-merge list` shows *(phone hotspot)* next to an adapter it treats this way. An Android phone is not
+recognised by itself: name its adapter with `-phone`, for example `net-merge tray -phone "Ethernet 5"`.
+</details>
+
+<details>
 <summary><strong>Windows uses only one network</strong></summary>
 <br>
 
@@ -454,13 +503,13 @@ The apps are not code-signed yet. On macOS run `xattr -d com.apple.quarantine ne
 </details>
 
 <details>
-<summary><strong>The menu says "Paused: one connection"</strong></summary>
+<summary><strong>The menu says "Paused: One Connection"</strong></summary>
 <br>
 
 net-merge only has something to do with two or more connections that have internet, so it waits. Plug
 in or connect the second one (see *Add a second connection*) and it starts by itself after a few seconds.
-To merge anyway, choose *Start merging* (it then stays on until a second connection has come and gone), or
-untick *Pause when there is only one connection*.
+To merge anyway, choose *Start Merging* (it then stays on until a second connection has come and gone), or
+untick *Auto-Pause*.
 
 Switching merging on or off cuts the connections that are open at that moment, which is why it waits 10
 seconds with nothing moving before pausing (2 minutes if a download or upload is still going) and
@@ -475,6 +524,20 @@ and never switches by itself more than once every 30 seconds.
 On Windows it may be behind the `^` arrow next to the clock. On macOS it is in the menu bar. On Linux the
 desktop needs StatusNotifierItem support (KDE, XFCE, Cinnamon, LXQt, Budgie, or GNOME with the *AppIndicator
 and KStatusNotifierItem Support* extension).
+
+**Waybar (Sway, Hyprland).** Show the speed in the bar with a custom module, no tray needed:
+
+```jsonc
+"custom/net-merge": {
+    "exec": "net-merge status -waybar",
+    "return-type": "json",
+    "interval": 2,
+    "on-click": "net-merge on",
+    "on-click-right": "net-merge off"
+}
+```
+
+Add `"custom/net-merge"` to `modules-right`. The two clicks switch a running `net-merge tray` or `run`.
 </details>
 
 <details>
@@ -540,7 +603,7 @@ net-merge is free. If it saves you time, you can [buy me a coffee](https://buyme
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/).
 
-Signing is being set up: releases up to v0.3.7 are not signed.
+Signing is being set up: releases up to v0.4.0 are not signed.
 
 - Committers and reviewers: [@rohit267](https://github.com/rohit267)
 - Approvers: [@rohit267](https://github.com/rohit267)
@@ -552,8 +615,9 @@ connects to:
 
 - `1.1.1.1` and `8.8.8.8` (Cloudflare and Google public DNS, and their IPv6 addresses), port 443: a
   connection that sends no data, to see whether each of your connections has internet.
-- `api.github.com`: the tray reads the newest release number, at start and every 6 hours.
-- From v0.3.8, `ipwho.is`, or `ipinfo.io` if that fails: the tray asks who provides each connection, to
+- `api.github.com`: the tray reads the newest release number, at start and every 6 hours, unless you
+  untick *Check For Updates*.
+- From v0.4.0, `ipwho.is`, or `ipinfo.io` if that fails: the tray asks who provides each connection, to
   show the provider's name beside it. The service sees that connection's public IP address. This is on
   by default; untick *Show ISP Names* in the menu to stop it.
 

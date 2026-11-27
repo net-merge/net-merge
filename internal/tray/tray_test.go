@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"net-merge/internal/engine"
+	"net-merge/internal/state"
 )
 
 func TestShortenCountsUTF16AndKeepsRunesWhole(t *testing.T) {
@@ -20,6 +21,49 @@ func TestShortenCountsUTF16AndKeepsRunesWhole(t *testing.T) {
 	}
 	if !utf8.ValidString(got) || !strings.HasSuffix(got, "…") {
 		t.Fatalf("bad cut: %q", got)
+	}
+}
+
+func TestAdapterRowKeepsLiveDetailsWithAliasAndISP(t *testing.T) {
+	s := engine.SlotStats{Name: "Ethernet 5", LinkIn: 12.3 * 125000, LinkOut: 1.2 * 125000, State: "up", State6: "up", Active: 7, LimitMbps: 20}
+	got := adapterRow(s, true, "Home", "Example ISP")
+	for _, text := range []string{"Home · Example ISP", "↓12", "↑1.2", "max 20"} {
+		if !strings.Contains(got, text) {
+			t.Errorf("%q missing from %q", text, got)
+		}
+	}
+	if strings.Contains(adapterRow(s, false, "", ""), "flows") {
+		t.Fatal("paused row reported relayed flows")
+	}
+	if s.Name != "Ethernet 5" {
+		t.Fatal("row formatting renamed the scheduling identity")
+	}
+}
+
+// The Windows 11 menu's render test (internal/winmenu/render_full_windows_test.go) draws these exact
+// rows. If adapterRow changes, change them there too, so the pictures show what the tray shows.
+func TestAdapterRowsAsTheWindowsMenuShowsThem(t *testing.T) {
+	lrm := string(rune(0x200E)) // the mark adapterRow puts after the name
+	mbit := func(m float64) float64 { return m * 125000 }
+	for _, c := range []struct {
+		s          engine.SlotStats
+		alias, isp string
+		want       string
+	}{
+		{engine.SlotStats{Name: "Ethernet 3", LinkIn: mbit(16), LinkOut: mbit(0.2), State: "up"}, "", "",
+			"Ethernet 3" + lrm + "  ↓16 ↑0.2"},
+		{engine.SlotStats{Name: "Wi-Fi", LinkIn: mbit(79), LinkOut: mbit(7), State: "up", LimitMbps: 100}, "Home", "Example ISP",
+			"Home · Example ISP" + lrm + "  ↓79 ↑7.0  max 100"},
+		{engine.SlotStats{Name: "iPhone USB", LinkIn: mbit(31), LinkOut: mbit(3.1), State: "up", CoolMbps: 20}, "", "",
+			"iPhone USB" + lrm + "  ↓31 ↑3.1  cooling 20"},
+	} {
+		if got := adapterRow(c.s, true, c.alias, c.isp); got != c.want {
+			t.Errorf("adapterRow(%s) = %q, want %q", c.s.Name, got, c.want)
+		}
+	}
+	// While paused nothing is being held back, so the cooling note is not shown.
+	if got := adapterRow(engine.SlotStats{Name: "iPhone USB", State: "up", CoolMbps: 20}, false, "", ""); strings.Contains(got, "cooling") {
+		t.Errorf("a paused row says it is cooling: %q", got)
 	}
 }
 
@@ -38,8 +82,8 @@ func TestVersionLabel(t *testing.T) {
 
 func TestUpdateLabel(t *testing.T) {
 	for _, c := range []struct{ in, want string }{
-		{"v0.3.4", "Update to v0.3.4"},
-		{"0.3.4", "Update to v0.3.4"}, // GitHub tags start with v, but do not depend on it
+		{"v0.3.4", "v0.3.4 (Update Available)"},
+		{"0.3.8-test", "v0.3.8-test (Update Available)"},
 	} {
 		if got := updateLabel(c.in); got != c.want {
 			t.Errorf("updateLabel(%q) = %q, want %q", c.in, got, c.want)
@@ -90,5 +134,46 @@ func TestLimitTextUsesMbit(t *testing.T) {
 	}
 	if tip := limitTip(0); !strings.Contains(tip, "full speed") {
 		t.Errorf("limitTip(0) = %q, want it to describe no cap", tip)
+	}
+}
+
+func TestCoolTipSaysItIsOptIn(t *testing.T) {
+	tip := coolTip(20)
+	for _, want := range []string{"Off:", "full speed", "20 Mbit/s", "Remembered"} {
+		if !strings.Contains(tip, want) {
+			t.Errorf("tooltip %q does not mention %q", tip, want)
+		}
+	}
+}
+
+// Ticking one saved box must not forget the other.
+func TestSaveSettingKeepsTheOthers(t *testing.T) {
+	u := &trayUI{stateDir: t.TempDir()}
+	if err := u.saveSetting(func(s *state.Settings) { s.PhoneCooling = true }); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.saveSetting(func(s *state.Settings) { s.GameMode = true }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := state.LoadSettings(u.stateDir)
+	if err != nil || !got.PhoneCooling || !got.GameMode {
+		t.Fatalf("saved %+v, %v", got, err)
+	}
+}
+
+func TestSpeedNow(t *testing.T) {
+	live := []engine.SlotStats{
+		{Name: "en0", IP: "192.168.0.5", LinkIn: 1e6, LinkOut: 2e5},
+		{Name: "en5", IP: "10.0.0.2", IP6: "2001:db8::2", LinkIn: 3e6, LinkOut: 4e5},
+	}
+	def := func() string { return "2001:db8::2" }
+	if down, up, ok := speedNow(true, live, def); !ok || down != 4e6 || up != 6e5 {
+		t.Errorf("merging: %v %v %v, want the total", down, up, ok)
+	}
+	if down, up, ok := speedNow(false, live, def); !ok || down != 3e6 || up != 4e5 {
+		t.Errorf("paused: %v %v %v, want the default adapter's", down, up, ok)
+	}
+	if _, _, ok := speedNow(false, live, func() string { return "" }); ok {
+		t.Error("paused with no internet: there is no default adapter to show")
 	}
 }

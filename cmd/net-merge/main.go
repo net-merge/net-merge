@@ -27,9 +27,11 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge run        system-wide ON in a console window (asks for admin/root); Ctrl+C or "off" turns it OFF
   net-merge on|off     turn system-wide mode on/off in a running tray (off also works for run)
   net-merge quit       turn it off and exit the tray
-  net-merge status     show whether it is on, and per-adapter load
+  net-merge status     show whether it is on, and per-adapter load (-waybar: for a waybar module)
   net-merge limit <adapter> <Mbit/s>   cap an adapter (0 or unlimited removes the cap)
   net-merge limit      list the saved speed limits
+  net-merge alias <adapter> [name]   set a display name (omit name to remove it)
+  net-merge isp-names on|off   show each connection's provider in the tray (on by default)
   net-merge socks      plain SOCKS5 proxy on 127.0.0.1:1080 (no admin, per-app)
   net-merge list       show detected adapters
   net-merge autostart on|off|status   start the tray at sign-in (Windows: no UAC prompt)
@@ -38,6 +40,7 @@ const usage = `net-merge: use all your network adapters at once.
   net-merge version
 
 Flags for run/socks: -include "WiFi,Ethernet 3"  -weight "Name=3"  -auto-weight=false  -stats 5s
+Phone hotspots: -phone-cooling (slow a phone down after long heavy use)  -phone-cool 20  -phone "Name"
 `
 
 type weightFlags map[string]float64
@@ -67,6 +70,32 @@ type common struct {
 	ipv6     string
 	mtu      int
 	pprof    string
+	phones   string
+	cooling  optBool
+	cool     float64
+}
+
+// optBool is a bool flag that remembers whether it was given, so a saved choice applies unless
+// the command line says otherwise.
+type optBool struct{ set, val bool }
+
+func (b *optBool) String() string   { return strconv.FormatBool(b.val) }
+func (b *optBool) IsBoolFlag() bool { return true }
+func (b *optBool) Set(v string) error {
+	val, err := strconv.ParseBool(v)
+	if err != nil {
+		return err
+	}
+	b.set, b.val = true, val
+	return nil
+}
+
+// or is the flag's value if it was given, else def.
+func (b *optBool) or(def bool) bool {
+	if b.set {
+		return b.val
+	}
+	return def
 }
 
 func (c *common) register(fs *flag.FlagSet) {
@@ -78,19 +107,38 @@ func (c *common) register(fs *flag.FlagSet) {
 	fs.BoolVar(&c.auto, "auto-weight", true, "weight adapters by measured throughput (off when -weight is given)")
 	fs.StringVar(&c.ipv6, "ipv6", "auto", "auto: IPv6 only if every adapter has it (else apps use IPv4 on all adapters); on: always; off: never")
 	fs.IntVar(&c.mtu, "mtu", tun.DefaultMTU, "MTU of the virtual adapter (1280-65535); larger means fewer packets and less CPU")
+	fs.Var(&c.cooling, "phone-cooling", "hold a phone hotspot to -phone-cool after 3 minutes of heavy use, until it has had a rest (default: the tray's saved choice, off unless ticked)")
+	fs.Float64Var(&c.cool, "phone-cool", engine.DefaultCoolMbps, "Mbit/s a phone hotspot is held to by -phone-cooling (0 = never held back)")
+	fs.StringVar(&c.phones, "phone", "", "comma-separated adapters to treat as phone hotspots, besides the iPhones net-merge recognises by itself")
 	fs.StringVar(&c.pprof, "pprof", "", "serve Go's profiler on this loopback address, e.g. 127.0.0.1:6060")
 	fs.StringVar(&c.logFile, "log", "", "write output to this file instead of the console")
 	fs.StringVar(&c.stateDir, "state-dir", state.DefaultDir(), "where status/off marker files live")
 }
 
 func (c *common) nicsDetailed() ([]nics.Nic, []nics.Skip, error) {
-	var inc []string
-	for _, s := range strings.Split(c.include, ",") {
+	found, skipped, err := nics.DiscoverNicsDetailed(splitNames(c.include), c.weights)
+	markPhones(found, splitNames(c.phones))
+	return found, skipped, err
+}
+
+func splitNames(list string) (names []string) {
+	for _, s := range strings.Split(list, ",") {
 		if s = strings.TrimSpace(s); s != "" {
-			inc = append(inc, s)
+			names = append(names, s)
 		}
 	}
-	return nics.DiscoverNicsDetailed(inc, c.weights)
+	return names
+}
+
+// markPhones adds the adapters named with -phone to the phones net-merge found by itself.
+func markPhones(found []nics.Nic, phones []string) {
+	for i := range found {
+		for _, name := range phones {
+			if strings.EqualFold(name, found[i].Name) {
+				found[i].Phone = true
+			}
+		}
+	}
 }
 
 func (c *common) nics() ([]nics.Nic, error) {
@@ -133,8 +181,18 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	if len(nics) == 0 {
 		return nil, nil, fmt.Errorf("no usable IPv4 adapters found (try: net-merge list)")
 	}
+	if c.cool < 0 || c.cool > engine.LimitMaxMbps {
+		return nil, nil, fmt.Errorf("-phone-cool must be between 0 and %.0f Mbit/s, got %v", float64(engine.LimitMaxMbps), c.cool)
+	}
 	sched := engine.NewScheduler(nics)
 	sched.SetAuto(c.auto && len(c.weights) == 0)
+	settings, err := state.LoadSettings(c.stateDir)
+	if err != nil {
+		logx.Printf("warning: %v (ignored)\n", err) // a bad settings file must not stop merging
+	}
+	sched.SetPhoneCooling(c.cooling.or(settings.PhoneCooling))
+	sched.SetCoolRate(c.cool)
+	sched.SetGameMode(settings.GameMode)
 	if limits, err := state.LoadLimits(c.stateDir); err != nil {
 		logx.Printf("warning: %v (ignored)\n", err) // a bad limits file must not stop merging
 	} else {
@@ -185,18 +243,24 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	return sched, bal, nil
 }
 
-func describeNic(n nics.Nic) string {
+func describeNic(n nics.Nic, aliases ...map[string]string) string {
 	s := n.Name
+	if len(aliases) != 0 {
+		s = state.AdapterLabel(s, aliases[0])
+	}
 	if n.IP != nil {
 		s += "  v4 " + n.IP.String()
 	}
 	if n.IP6 != nil {
 		s += "  v6 " + n.IP6.String()
 	}
+	if n.Phone {
+		s += "  (phone hotspot)"
+	}
 	return s
 }
 
-func formatNICs(snap []engine.SlotStats) string {
+func formatNICs(snap []engine.SlotStats, aliases ...map[string]string) string {
 	var sb strings.Builder
 	for _, s := range snap {
 		gone := ""
@@ -209,8 +273,18 @@ func formatNICs(snap []engine.SlotStats) string {
 		if s.LimitMbps > 0 {
 			lim = "  limit " + limitPhrase(s.LimitMbps)
 		}
+		if s.Phone {
+			lim += "  phone"
+		}
+		if s.CoolMbps > 0 {
+			lim += "  cooling at " + limitPhrase(s.CoolMbps)
+		}
+		name := s.Name
+		if len(aliases) != 0 {
+			name = state.AdapterLabel(name, aliases[0])
+		}
 		fmt.Fprintf(&sb, "%-14s v4 %-11s v6 %-11s link down %6.1f up %5.1f Mbit/s  via net-merge %6.1f  active %3d  total %5d  w %.2f/%.2f  failed %d%s%s\n",
-			s.Name, s.State, s.State6, s.LinkIn*8/1e6, s.LinkOut*8/1e6, (s.RateIn+s.RateOut)*8/1e6, s.Active, s.Total, s.Weight, s.Weight6, s.Failed, lim, gone)
+			name, s.State, s.State6, s.LinkIn*8/1e6, s.LinkOut*8/1e6, (s.RateIn+s.RateOut)*8/1e6, s.Active, s.Total, s.Weight, s.Weight6, s.Failed, lim, gone)
 	}
 	return sb.String()
 }
@@ -265,6 +339,10 @@ func main() {
 		cmdStatus(args)
 	case "limit":
 		cmdLimit(args)
+	case "alias":
+		cmdAlias(args)
+	case "isp-names":
+		cmdISPNames(args)
 	case "socks":
 		cmdSocks(args)
 	case "list":
@@ -297,11 +375,12 @@ func cmdList(args []string) {
 	if len(nics) == 0 {
 		fmt.Println("No usable adapters found.")
 	}
+	prefs, _ := state.LoadTrayPreferences(c.stateDir)
 	for _, n := range nics {
-		fmt.Printf("USE   %s  (index %d)\n", describeNic(n), n.Index)
+		fmt.Printf("USE   %s  (index %d)\n", describeNic(n, prefs.Aliases), n.Index)
 	}
 	for _, s := range skipped {
-		fmt.Printf("skip  %s: %s\n", s.Name, s.Reason)
+		fmt.Printf("skip  %s: %s\n", state.AdapterLabel(s.Name, prefs.Aliases), s.Reason)
 	}
 }
 
@@ -390,6 +469,11 @@ func cmdRun(args []string) {
 		case <-crash:
 			os.Exit(3) // simulates a crash: no teardown runs
 		case <-poll.C:
+			if req, ok := state.TakeAlias(c.stateDir); ok {
+				if err := state.SetAlias(c.stateDir, req.Adapter, req.Alias); err != nil {
+					logx.Printf("warning: saving alias: %v\n", err)
+				}
+			}
 			if req, ok := state.TakeLimit(c.stateDir); ok {
 				sched.SetLimit(req.Adapter, req.Mbps)
 				if err := state.SaveLimits(c.stateDir, sched.Limits()); err != nil {
@@ -443,13 +527,19 @@ func cmdControl(name string, args []string) {
 func cmdStatus(args []string) {
 	fs := flag.NewFlagSet("status", flag.ExitOnError)
 	dir := fs.String("state-dir", state.DefaultDir(), "state directory")
+	waybar := fs.Bool("waybar", false, "print one line of JSON for a waybar custom module")
 	fs.Parse(args)
 	st, on := state.Read(*dir)
+	if *waybar {
+		fmt.Println(waybarJSON(st, on))
+		return
+	}
 	if !on {
 		fmt.Println("net-merge is OFF.")
 		return
 	}
-	fmt.Printf("net-merge is ON (%s, pid %d, up %s)\nIPv6: %s\n%s", st.Mode, st.PID, time.Since(st.Since).Truncate(time.Second), st.V6, formatNICs(st.NICs))
+	prefs, _ := state.LoadTrayPreferences(*dir)
+	fmt.Printf("net-merge is ON (%s, pid %d, up %s)\nIPv6: %s\n%s", st.Mode, st.PID, time.Since(st.Since).Truncate(time.Second), st.V6, formatNICs(st.NICs, prefs.Aliases))
 }
 
 // cmdLimit lists the saved caps, or sets one. A running instance gets the change through a marker

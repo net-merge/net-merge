@@ -5,7 +5,11 @@ package tray
 import (
 	"fmt"
 	"math"
+	"net"
+	"runtime"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 	"unicode/utf16"
 
@@ -14,10 +18,11 @@ import (
 	"net-merge/internal/engine"
 	"net-merge/internal/icon"
 	"net-merge/internal/logx"
+	"net-merge/internal/nics"
 	"net-merge/internal/platform"
+	"net-merge/internal/provider"
 	"net-merge/internal/state"
 	"net-merge/internal/tun"
-	"net-merge/internal/update"
 )
 
 const trayRows = 4 // adapters shown in the menu; extra rows stay hidden
@@ -28,7 +33,9 @@ func Run(t *tun.Tun, sched *engine.Scheduler, bal *engine.Balancer, stateDir, ve
 	ui := &trayUI{tun: t, sched: sched, bal: bal, stateDir: stateDir, version: version, startOn: startOn,
 		iconOn: icon.Tray(true), iconOff: icon.Tray(false), ready: ready}
 	ui.ap.enabled = autoPause
-	exit := func() { t.Close(); state.Clear(stateDir) }
+	ui.providers = provider.New()
+	defer ui.providers.Close()
+	exit := func() { removeTraySpeed(); t.Close(); state.Clear(stateDir) }
 	systray.Run(ui.onReady, exit)
 	exit() // macOS's Run returns on Quit without calling onExit; both are idempotent
 }
@@ -48,34 +55,56 @@ type trayUI struct {
 
 	limitClicks chan limitClick
 	rowNames    [trayRows]string
-	limitUnlim  [trayRows]*systray.MenuItem
-	limitPreset [trayRows][]*systray.MenuItem
+	limitUnlim  [trayRows]*menuItem
+	limitPreset [trayRows][]*menuItem
 
-	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
-	versionItem                                      *systray.MenuItem
-	rows                                             []*systray.MenuItem
+	header, toggleItem, v6Item, autoItem, signInItem *menuItem
+	coolItem, gameItem                               *menuItem
+	versionItem                                      *menuItem
+	updatesItem                                      *menuItem
+	speedItem                                        *menuItem // macOS and Windows, else nil
+	showSpeed                                        bool
+	lastSpeed                                        string
+	checkUpdates, updateShown                        atomic.Bool
+	recheck                                          chan struct{}
+	newRelease                                       chan string // from watchUpdates to the menu loop
+	rows                                             []*menuItem
 	lastOn                                           *bool
 	lastHeader                                       string
 	lastTip                                          string
 	lastRows                                         [trayRows]string
 	lastErr                                          string
 	busyUntil                                        time.Time
+	ispItem                                          *menuItem
+	prefs                                            state.TrayPreferences
+	providers                                        *provider.Resolver
+	adaptersKey                                      string
+	adapters                                         []nics.Nic
+	kinds                                            map[string]nics.Kind
+	lastKinds                                        [trayRows]nics.Kind
 }
 
-func (u *trayUI) onReady() {
+func (u *trayUI) setupMenu() *menuItem {
+	var err error
+	u.prefs, err = state.LoadTrayPreferences(u.stateDir)
+	if err != nil {
+		logx.Printf("warning: tray preferences: %v\n", err)
+	}
 	if u.ready != nil {
 		close(u.ready)
 	}
 	systray.SetIcon(u.iconOff)
 	systray.SetTooltip("net-merge")
-	u.header = systray.AddMenuItem("net-merge", "")
+	startMenu()
+	u.header = addMenuItem("net-merge", "")
 	u.header.Disable()
-	systray.AddSeparator()
+	addSeparator()
 	u.limitClicks = make(chan limitClick, trayRows)
 	for i := 0; i < trayRows; i++ {
-		r := systray.AddMenuItem("", "Click to cap this adapter's speed (download and upload)")
+		r := addMenuItem("", "Click to cap this adapter's speed (download and upload)")
+		setAdapterIcon(r, nics.Unknown)
 		u.rows = append(u.rows, r)
-		addLimit := func(mbitPerSec float64, title string) *systray.MenuItem {
+		addLimit := func(mbitPerSec float64, title string) *menuItem {
 			it := r.AddSubMenuItemCheckbox(title, limitTip(mbitPerSec), false)
 			go func() {
 				for range it.ClickedCh {
@@ -93,13 +122,38 @@ func (u *trayUI) onReady() {
 		// entries added later (when they are first checked) would appear.
 		r.Hide()
 	}
-	systray.AddSeparator()
-	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
-	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
-	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
-	u.toggleItem = systray.AddMenuItem("Start merging", "")
-	u.versionItem = systray.AddMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
-	quit := systray.AddMenuItem("Quit", "Turns system-wide mode off and exits")
+	addSeparator()
+	u.ispItem = addMenuItemCheckbox("Show ISP Names", "Asks ipwho.is (ipinfo.io as fallback) through each adapter; each service receives that adapter's public IP. On until you untick it.", u.prefs.LookupISP)
+	u.v6Item = addMenuItemCheckbox("Use All Adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.gameItem = addMenuItemCheckbox("Game Mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
+	u.autoItem = addMenuItemCheckbox("Auto-Pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
+	u.coolItem = addMenuItemCheckbox("Cool Down Phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
+	u.signInItem = addMenuItemCheckbox("Start at Sign-In", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
+	settings, _ := state.LoadSettings(u.stateDir) // a bad file was already reported at start
+	u.checkUpdates.Store(!settings.NoUpdateCheck)
+	u.recheck = make(chan struct{}, 1)
+	u.newRelease = make(chan string)
+	u.updatesItem = addMenuItemCheckbox("Check For Updates", "Asks GitHub for the newest release number at start and every 6 hours.", !settings.NoUpdateCheck)
+	u.showSpeed = !settings.HideSpeed
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" { // Linux panels: net-merge status -waybar
+		u.speedItem = addMenuItemCheckbox("Show Speed", "Shows download and upload beside the icon: all connections while merging, the default one while paused.", u.showSpeed)
+		setSymbol(u.speedItem, "speed")
+	}
+	u.toggleItem = addMenuItem("Start Merging", "")
+	u.versionItem = addMenuItem(versionLabel(u.version), versionTip)
+	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
+	for it, name := range map[*menuItem]string{
+		u.header: "speed", u.ispItem: "isp", u.v6Item: "globe", u.gameItem: "game",
+		u.autoItem: "link", u.coolItem: "cool", u.signInItem: "person", u.updatesItem: "sync", u.toggleItem: "play",
+		u.versionItem: "info", quit: "power",
+	} {
+		setSymbol(it, name)
+	}
+	return quit
+}
+
+func (u *trayUI) onReady() {
+	quit := u.setupMenu()
 	go u.watchUpdates()
 
 	go func() {
@@ -120,8 +174,22 @@ func (u *trayUI) onReady() {
 		for {
 			u.refresh()
 			select {
+			case <-u.ispItem.ClickedCh:
+				u.toggleISP()
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
+			case <-u.gameItem.ClickedCh:
+				on := !u.gameItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.GameMode = on }); err != nil {
+					u.lastErr = "keep a connection free: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+				} else if on {
+					u.gameItem.Check()
+				} else {
+					u.gameItem.Uncheck()
+				}
+				u.sched.SetGameMode(u.gameItem.Checked())
 			case <-u.autoItem.ClickedCh:
 				if u.autoItem.Checked() {
 					u.autoItem.Uncheck()
@@ -148,8 +216,53 @@ func (u *trayUI) onReady() {
 					u.v6Item.Check()
 					u.bal.SetV6Mode(engine.V6Auto)
 				}
+			case <-u.coolItem.ClickedCh:
+				on := !u.coolItem.Checked()
+				u.lastErr = ""
+				// Saved first, so the box never shows a choice that is gone after a restart.
+				if err := u.saveSetting(func(s *state.Settings) { s.PhoneCooling = on }); err != nil {
+					u.lastErr = "cool down phone hotspots: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+				} else if on {
+					u.coolItem.Check()
+				} else {
+					u.coolItem.Uncheck()
+				}
+				u.sched.SetPhoneCooling(u.coolItem.Checked())
+			case <-u.speedClicks():
+				on := !u.speedItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.HideSpeed = !on }); err != nil {
+					u.lastErr = "show speed: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+					continue
+				}
+				if on {
+					u.speedItem.Check()
+				} else {
+					u.speedItem.Uncheck()
+				}
+				u.showSpeed = on
+			case latest := <-u.newRelease:
+				if u.checkUpdates.Load() { // not unticked meanwhile
+					u.showUpdate(latest)
+				}
+			case <-u.updatesItem.ClickedCh:
+				on := !u.updatesItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.NoUpdateCheck = !on }); err != nil {
+					u.lastErr = "check for updates: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+					continue
+				}
+				if on {
+					u.updatesItem.Check()
+				} else {
+					u.updatesItem.Uncheck()
+				}
+				u.setUpdateCheck(on)
 			case <-u.versionItem.ClickedCh:
-				if err := platform.OpenURL(update.ReleasesURL); err != nil {
+				if err := platform.OpenURL(u.versionURL()); err != nil {
 					logx.Printf("error: opening the release page: %v\n", err)
 				}
 			case c := <-u.limitClicks:
@@ -162,6 +275,13 @@ func (u *trayUI) onReady() {
 				systray.Quit()
 				return
 			case <-tick.C:
+				if req, ok := state.TakeAlias(u.stateDir); ok {
+					if err := state.SetAlias(u.stateDir, req.Adapter, req.Alias); err != nil {
+						u.lastErr = "alias: " + err.Error()
+					} else if p, err := state.LoadTrayPreferences(u.stateDir); err == nil {
+						u.applyPrefs(p)
+					}
+				}
 				if req, ok := state.TakeLimit(u.stateDir); ok { // `net-merge limit ...` from a terminal
 					u.applyLimit(req.Adapter, req.Mbps)
 				}
@@ -226,7 +346,7 @@ func (u *trayUI) turn(on bool) {
 		state.Clear(u.stateDir)
 		return
 	}
-	u.setHeader("Turning on...")
+	u.setHeader("Turning On...")
 	if err := u.tun.On(); err != nil {
 		u.lastErr = err.Error()
 		logx.Printf("error: %v\n", err)
@@ -242,37 +362,47 @@ func (u *trayUI) setHeader(s string) {
 
 func (u *trayUI) refresh() {
 	on := u.tun.IsOn()
+	var live []engine.SlotStats
+	for _, s := range u.sched.Snapshot() {
+		if s.Present {
+			live = append(live, s)
+		}
+	}
+	u.refreshMenu(on, live)
+}
+
+func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
+	u.refreshMetadata(live)
 	if u.lastOn == nil || *u.lastOn != on {
 		if on {
 			systray.SetIcon(u.iconOn)
-			u.toggleItem.SetTitle("Pause merging")
+			u.toggleItem.SetTitle("Pause Merging")
+			setSymbol(u.toggleItem, "pause")
 		} else {
 			systray.SetIcon(u.iconOff)
-			u.toggleItem.SetTitle("Start merging")
+			u.toggleItem.SetTitle("Start Merging")
+			setSymbol(u.toggleItem, "play")
 		}
 		u.lastOn = &on
 	}
 
 	// Speeds are each adapter's real traffic from the OS's counters, i.e. every app (qBittorrent binds
 	// to adapters directly and never passes through net-merge), and they are shown even when paused.
-	var live []engine.SlotStats
 	var down, up float64
-	for _, s := range u.sched.Snapshot() {
-		if s.Present {
-			live = append(live, s)
-			down += s.LinkIn
-			up += s.LinkOut
-		}
+	for _, s := range live {
+		down += s.LinkIn
+		up += s.LinkOut
 	}
+	u.refreshSpeed(on, live)
 	state := stateWord(on)
 	if !on && u.ap.enabled && u.ap.waiting && !u.ap.manualOff {
-		state = "Paused: one connection"
+		state = "Paused: One Connection"
 	}
 
 	if u.lastErr != "" {
 		u.setHeader("Error: " + shorten(u.lastErr, 70))
 	} else {
-		u.setHeader(fmt.Sprintf("%s  ·  Total ↓%s ↑%s Mbps", state, mbps(down), mbps(up)))
+		u.setHeader(fmt.Sprintf("%s  ·  ↓%s ↑%s Mbps", state, mbps(down), mbps(up)))
 	}
 
 	for i, r := range u.rows {
@@ -281,38 +411,111 @@ func (u *trayUI) refresh() {
 				r.Hide()
 				u.lastRows[i] = ""
 				u.rowNames[i] = ""
+				u.lastKinds[i] = ""
 			}
 			continue
 		}
 		s := live[i]
 		u.rowNames[i] = s.Name
-		txt := fmt.Sprintf("%s:  ↓%s ↑%s Mbps", s.Name, mbps(s.LinkIn), mbps(s.LinkOut))
-		if s.LimitMbps > 0 {
-			txt += "  limit " + limitText(s.LimitMbps)
-		}
-		if on {
-			txt += fmt.Sprintf("  (%d flows via net-merge)", s.Active)
-		}
-		if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
-			txt += "  - " + s.State
-		}
-		if s.State6 == "up" {
-			txt += "  +IPv6"
-		}
+		isp := u.providers.Get(s.Name)
+		txt := menuText(adapterRow(s, on, u.prefs.Aliases[s.Name], isp))
 		if txt != u.lastRows[i] {
 			r.SetTitle(txt)
 			r.Show()
 			u.lastRows[i] = txt
 		}
+		kind := u.kinds[s.Name]
+		if kind == "" {
+			kind = nics.Unknown
+		}
+		if kind != u.lastKinds[i] {
+			setAdapterIcon(r, kind)
+			u.lastKinds[i] = kind
+		}
 		u.showLimit(i, s.LimitMbps)
 	}
 
 	// Hover tooltip: one line per adapter, so speeds are visible without opening the menu.
-	tip := trayTooltip(state, down, up, live)
+	tipLive := append([]engine.SlotStats(nil), live...)
+	for i := range tipLive {
+		if alias := u.prefs.Aliases[tipLive[i].Name]; alias != "" {
+			tipLive[i].Name = alias
+		}
+	}
+	tip := trayTooltip(state, down, up, tipLive)
 	if tip != u.lastTip {
 		systray.SetTooltip(tip)
 		u.lastTip = tip
 	}
+}
+
+// refreshMetadata only enumerates hardware when the adapter/address set changes.
+// The resolver separately coalesces these UI refreshes into one lookup per address.
+func (u *trayUI) refreshMetadata(live []engine.SlotStats) {
+	var key strings.Builder
+	for _, s := range live {
+		fmt.Fprintf(&key, "%s/%s/%s\x00", s.Name, s.IP, s.IP6)
+	}
+	if key.String() != u.adaptersKey {
+		u.adaptersKey = key.String()
+		u.kinds = nics.AdapterKinds()
+		u.adapters = nil
+		for _, s := range live {
+			ifc, err := net.InterfaceByName(s.Name)
+			if err == nil {
+				u.adapters = append(u.adapters, nics.Nic{Name: s.Name, Index: ifc.Index, IP: net.ParseIP(s.IP), IP6: net.ParseIP(s.IP6)})
+			}
+		}
+	}
+	u.providers.Refresh(u.adapters, u.prefs.LookupISP)
+}
+
+func (u *trayUI) toggleISP() {
+	p, err := state.LoadTrayPreferences(u.stateDir)
+	if err == nil {
+		p.LookupISP = !u.ispItem.Checked() // what the click asked for, whatever the file says by now
+		err = state.SaveTrayPreferences(u.stateDir, p)
+	}
+	if err != nil {
+		u.lastErr = "ISP lookup preference: " + err.Error()
+		logx.Printf("error: %s\n", u.lastErr)
+		return
+	}
+	u.applyPrefs(p)
+}
+
+// applyPrefs puts preferences read from disk on screen: net-merge isp-names or alias may have
+// changed them since the tray started.
+func (u *trayUI) applyPrefs(p state.TrayPreferences) {
+	u.prefs = p
+	if p.LookupISP {
+		u.ispItem.Check()
+	} else {
+		u.ispItem.Uncheck()
+	}
+	u.providers.Refresh(u.adapters, p.LookupISP) // turning off cancels pending requests now
+}
+
+func adapterRow(s engine.SlotStats, on bool, alias, isp string) string {
+	name := s.Name
+	if alias != "" {
+		name = alias
+	}
+	if isp != "" && isp != name {
+		name += " · " + shorten(isp, 45)
+	}
+	// Keep the numeric traffic suffix left-to-right after an Arabic/Hebrew alias.
+	txt := fmt.Sprintf("%s\u200e  ↓%s ↑%s", name, mbps(s.LinkIn), mbps(s.LinkOut))
+	if s.LimitMbps > 0 {
+		txt += "  max " + strconv.FormatFloat(s.LimitMbps, 'f', -1, 64)
+	}
+	if on && s.CoolMbps > 0 { // only traffic net-merge relays is held back, so say it only while merging
+		txt += "  cooling " + strconv.FormatFloat(s.CoolMbps, 'f', -1, 64)
+	}
+	if s.State != "up" && s.State6 != "up" { // neither family verified yet, or no internet
+		txt += "  - " + s.State
+	}
+	return txt
 }
 
 // Windows 11 shows only the first 64 characters of a tray tooltip (measured: the text stopped mid-
@@ -336,8 +539,8 @@ func versionLabel(v string) string {
 	return withV(v)
 }
 
-// updateLabel replaces the version line once GitHub has a newer release.
-func updateLabel(latest string) string { return "Update to " + withV(latest) }
+// updateLabel is the version line once GitHub has a newer release.
+func updateLabel(running string) string { return versionLabel(running) + " (Update Available)" }
 
 // withV adds the "v" that releases are tagged with, unless the build says "dev" or has one already.
 func withV(v string) string {
@@ -400,7 +603,10 @@ func utf16Len(s string) int {
 }
 
 // mbps formats bytes/s as Mbit/s compactly: one decimal below 10, whole numbers above.
-func mbps(bytesPerSec float64) string {
+func mbps(bytesPerSec float64) string { return Mbps(bytesPerSec) }
+
+// Mbps writes a rate the way the tray does, for other places that show one.
+func Mbps(bytesPerSec float64) string {
 	m := bytesPerSec * 8 / 1e6
 	if m < 9.95 {
 		return fmt.Sprintf("%.1f", m)
@@ -422,6 +628,20 @@ func shorten(s string, n int) string {
 		units += w
 	}
 	return s
+}
+
+// saveSetting changes one saved tray choice and leaves the others as they are.
+func (u *trayUI) saveSetting(set func(*state.Settings)) error {
+	s, _ := state.LoadSettings(u.stateDir) // a broken file is replaced
+	set(&s)
+	return state.SaveSettings(u.stateDir, s)
+}
+
+// coolTip explains the opt-in. A phone is always checked for internet gently and kept off light
+// traffic when another link is as fast; this box only adds the slowdown, which costs speed.
+func coolTip(mbitPerSec float64) string {
+	return "Off: a phone hotspot keeps its full speed. Ticked: after 3 minutes of heavy use a phone hotspot is held at " +
+		limitText(mbitPerSec) + " until it has had a rest, so it stays cooler. Remembered after a restart."
 }
 
 // limitPresets are the caps offered in each adapter's submenu, in Mbit/s.
@@ -455,7 +675,7 @@ func limitTip(mbitPerSec float64) string {
 
 // showLimit ticks the cap the adapter shown in row is using.
 func (u *trayUI) showLimit(row int, mbitPerSec float64) {
-	tick := func(it *systray.MenuItem, want bool) {
+	tick := func(it *menuItem, want bool) {
 		if it != nil && it.Checked() != want {
 			if want {
 				it.Check()
@@ -486,4 +706,57 @@ func (u *trayUI) applyLimit(name string, mbitPerSec float64) {
 			u.showLimit(i, mbitPerSec)
 		}
 	}
+}
+
+// refreshSpeed keeps the speed beside the icon current, if Show Speed is ticked.
+func (u *trayUI) refreshSpeed(on bool, live []engine.SlotStats) {
+	down, up := "", ""
+	if u.speedItem != nil && u.showSpeed {
+		if d, p, ok := speedNow(on, live, defaultAddr); ok {
+			down, up = mbps(d), mbps(p)
+		}
+	}
+	if key := fmt.Sprint(on, down, " ", up); key != u.lastSpeed {
+		setTraySpeed(down, up, on)
+		u.lastSpeed = key
+	}
+}
+
+// speedNow is the traffic to show: every adapter together while merging, else the default adapter's.
+func speedNow(on bool, live []engine.SlotStats, defaultAddr func() string) (down, up float64, ok bool) {
+	if on {
+		for _, s := range live {
+			down, up = down+s.LinkIn, up+s.LinkOut
+		}
+		return down, up, true
+	}
+	if addr := defaultAddr(); addr != "" {
+		for _, s := range live {
+			if s.IP == addr || s.IP6 == addr {
+				return s.LinkIn, s.LinkOut, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+// defaultAddr is the local address the system would use for the internet, so the default adapter's.
+// Connecting a UDP socket only picks the route: nothing is sent.
+func defaultAddr() string {
+	for _, target := range []string{"1.1.1.1:53", "[2606:4700:4700::1111]:53"} {
+		if c, err := net.Dial("udp", target); err == nil {
+			addr := c.LocalAddr().(*net.UDPAddr).IP.String()
+			c.Close()
+			return addr
+		}
+	}
+	return ""
+}
+
+// speedClicks is nil, which never fires in a select, where there is no Show Speed box.
+func (u *trayUI) speedClicks() <-chan struct{} {
+	if u.speedItem == nil {
+		return nil
+	}
+	return u.speedItem.ClickedCh
 }
