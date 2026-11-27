@@ -31,7 +31,7 @@ func fullMenu() []*Item {
 		adapter("iPhone USB"+leftToRight+"  ↓31 ↑3.1 Mbps  cooling at 20 Mbit/s  (9 flows via net-merge)", "phone"),
 		sep(),
 		row("Use all adapters", true, true, false),
-		row("Game mode", true, true, false),
+		row("Game Mode", true, true, false),
 		row("Auto-pause", true, true, false),
 		row("Cool down phone", true, false, false),
 		row("Start at sign-in", true, false, false),
@@ -55,8 +55,8 @@ func TestFullMenuRendersWithIconsInBothThemes(t *testing.T) {
 			var widest int
 			w, h := layoutRows(rows, dpi, 0, 0, textWidthAt(dpi))
 			widest = w
-			const hover = 8 // "Game mode"
-			if rows[hover].title != "Game mode" {
+			const hover = 8 // "Game Mode"
+			if rows[hover].title != "Game Mode" {
 				t.Fatalf("row %d is %q", hover, rows[hover].title)
 			}
 			rows[hover].glow = 1

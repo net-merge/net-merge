@@ -65,7 +65,7 @@ func iconForItem(title string, hasSub bool, kind string) string {
 		return iconPlay
 	case strings.HasPrefix(title, "Use all adapters"):
 		return iconGlobe
-	case title == "Game mode":
+	case title == "Game Mode":
 		return iconGame
 	case title == "Auto-pause":
 		return iconLink

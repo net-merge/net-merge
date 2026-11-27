@@ -115,7 +115,7 @@ func (u *trayUI) setupMenu() *menuItem {
 	}
 	addSeparator()
 	u.v6Item = addMenuItemCheckbox("Use all adapters", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
-	u.gameItem = addMenuItemCheckbox("Game mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
+	u.gameItem = addMenuItemCheckbox("Game Mode", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
 	u.autoItem = addMenuItemCheckbox("Auto-pause", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
 	u.coolItem = addMenuItemCheckbox("Cool down phone", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
 	u.signInItem = addMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())

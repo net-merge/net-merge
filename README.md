@@ -379,7 +379,7 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
    shows *cooling 20*, until it has had a 3-minute rest. This costs speed, so it is your choice;
    it is remembered after a restart. `net-merge tray -phone-cool 10` changes the 20, and
    `-phone "Ethernet 5"` treats another adapter, for example an Android phone, as a phone hotspot.
-7. **Games and calls.** Tick *Game mode* (off by default). While one
+7. **Games and calls.** Tick *Game Mode* (off by default). While one
    connection carries a game or a voice call (a steady stream of small UDP packets for a few seconds), new
    connections go over your other ones. Nothing is slowed down and open downloads stay where they are. It
    is remembered after a restart.

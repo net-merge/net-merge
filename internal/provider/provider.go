@@ -190,7 +190,7 @@ func query(ctx context.Context, client *http.Client, endpoint string) (string, e
 			name = rest
 		}
 	}
-	name = cleanName(name)
+	name = shortISP(cleanName(name))
 	if name == "" {
 		return "", fmt.Errorf("ISP lookup returned no name")
 	}

@@ -21,7 +21,7 @@ func TestSmallJSONNamesAndUntrustedResponses(t *testing.T) {
 		{`{"success":true,"connection":{"isp":"Example ISP"}}`, "Example ISP"},
 		{`{"org":"AS12345 Example ISP"}`, "Example ISP"},
 		{`{"org":"  AS12345 Example ISP  "}`, "Example ISP"},
-		{`{"org":"ASword Broadband"}`, "ASword Broadband"},
+		{`{"org":"ASword Broadband"}`, "ASword"},
 		{`{"connection":{"isp":"A\nB\tC\u202e"}}`, "ABC"},
 		{`{"success":false,"connection":{"isp":"Ignore me"}}`, ""},
 		{`{"error":true,"org":"Ignore me"}`, ""},
