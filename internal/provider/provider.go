@@ -1,4 +1,4 @@
-// Package provider discovers ISP names through each adapter, for the tray rows.
+// Package provider discovers ISP names through each adapter, only on demand.
 package provider
 
 import (

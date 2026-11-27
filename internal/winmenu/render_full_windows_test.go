@@ -30,6 +30,7 @@ func fullMenu() []*Item {
 		adapter("Home · Example ISP"+leftToRight+"  ↓79 ↑7.0 Mbps  limit 100 Mbit/s  (31 flows via net-merge)  +IPv6", "wifi"),
 		adapter("iPhone USB"+leftToRight+"  ↓31 ↑3.1 Mbps  cooling at 20 Mbit/s  (9 flows via net-merge)", "phone"),
 		sep(),
+		row("Show ISP Names", true, true, false),
 		row("Use All Adapters", true, true, false),
 		row("Game Mode", true, true, false),
 		row("Auto-Pause", true, true, false),

@@ -25,6 +25,7 @@ const (
 	iconPower    = string(rune(0xE7E8))
 	iconGame     = string(rune(0xE7FC)) // a game controller
 	iconCool     = string(rune(0xE9CA)) // a thermometer
+	iconProvider = string(rune(0xE825)) // a building with columns: the company that provides the connection
 )
 
 // leftToRight is U+200E, the invisible mark that the tray puts after an adapter's name so its numbers
@@ -65,6 +66,8 @@ func iconForItem(title string, hasSub bool, kind string) string {
 		return iconPlay
 	case strings.HasPrefix(title, "Use All Adapters"):
 		return iconGlobe
+	case title == "Show ISP Names":
+		return iconProvider
 	case title == "Game Mode":
 		return iconGame
 	case title == "Auto-Pause":

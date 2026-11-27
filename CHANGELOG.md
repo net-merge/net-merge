@@ -25,14 +25,15 @@ entry here before pushing a version tag.
   generic network icon, chosen from what the system says the adapter is (on Windows 11 they are the
   menu's own Fluent icons). The other menu rows have icons too, on macOS, Linux and Windows. It is only a picture; it never changes which adapter is used.
 - **ISP names in adapter rows.** The tray asks `ipwho.is` (or `ipinfo.io` if that fails), through each
-  adapter, who provides it, and shows the short name (*Railtel*, not the registered company name). The service sees that adapter's public IP address.
+  adapter, who provides it, and shows the short name (*Railtel*, not the registered company name). The
+  service sees that adapter's public IP address. On by default; untick *Show ISP Names* to stop it.
 - **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
   tray, `net-merge status` and `net-merge list` show beside the system name; balancing is unchanged.
 
 ### Changed
 - **A shorter tray menu.** Rows show just the name and speeds (`↓79 ↑7.0`, in Mbps as on the top line),
   with *max 20* or *cooling 20* when capped. The tick boxes have short names: *Use All Adapters*,
-  *Auto-Pause*, *Game Mode*, *Cool Down Phone*. Hover one to read what it does.
+  *Auto-Pause*, *Game Mode*, *Cool Down Phone*, *Show ISP Names*. Hover one to read what it does.
   `net-merge status` still shows how many connections each adapter carries.
 - **The tray menu on Windows looks like Windows 11's own menus.** It has the acrylic backdrop, rounded
   corners, Fluent icons, spacing and hover fades of the desktop's right-click menu, follows the light or

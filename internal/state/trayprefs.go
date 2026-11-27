@@ -13,7 +13,8 @@ import (
 )
 
 type TrayPreferences struct {
-	Aliases map[string]string `json:"aliases,omitempty"`
+	LookupISP bool              `json:"lookupISP"`
+	Aliases   map[string]string `json:"aliases,omitempty"`
 }
 
 // TrayPreferencesPath keeps UI preferences beside limits.json, including the
@@ -23,7 +24,7 @@ func TrayPreferencesPath(dir string) string {
 }
 
 func LoadTrayPreferences(dir string) (TrayPreferences, error) {
-	p := TrayPreferences{Aliases: map[string]string{}}
+	p := TrayPreferences{LookupISP: true, Aliases: map[string]string{}} // ISP names are on until unticked
 	f, err := os.Open(TrayPreferencesPath(dir))
 	if errors.Is(err, os.ErrNotExist) {
 		return p, nil

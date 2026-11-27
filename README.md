@@ -53,7 +53,7 @@ A real test with Wi-Fi + an Android USB tether + an iPhone hotspot, 9 downloads 
 ## Adapter icons and names
 
 The tray menu shows a Wi-Fi, Ethernet, phone/USB tether or generic icon beside each adapter.
-The tray also shows each adapter's internet provider. For that it asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. To retry a failed lookup, restart net-merge.
+**Show ISP Names** is on by default. The tray asks `ipwho.is` (or `ipinfo.io` if that fails) through each adapter; the service receives that adapter's public IP. The ISP name is cached until the adapter disappears or its address changes. No logos are downloaded. Untick it to stop the lookups; untick and tick it to retry a failed one.
 
 Give an adapter a display name with `net-merge alias "Ethernet 5" "Home connection"`.
 Remove it with `net-merge alias "Ethernet 5"`. The name appears in the tray, `status` and `list`;
@@ -601,8 +601,8 @@ connects to:
 - `1.1.1.1` and `8.8.8.8` (Cloudflare and Google public DNS, and their IPv6 addresses), port 443: a
   connection that sends no data, to see whether each of your connections has internet.
 - `api.github.com`: the tray reads the newest release number, at start and every 6 hours.
-- `ipwho.is`, or `ipinfo.io` if that fails: the tray asks who provides each connection, to show the
-  provider's name. The service sees that connection's public IP address.
+- `ipwho.is`, or `ipinfo.io` if that fails: unless you untick *Show ISP Names*. The service sees that
+  connection's public IP address.
 
 The Linux package server, `pkg.net-merge.org`, counts how many different computers check for updates each
 day. For that it keeps a salted hash of each IP address, for that day only.
