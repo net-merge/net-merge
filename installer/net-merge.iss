@@ -60,8 +60,12 @@ Name: "{autoprograms}\net-merge"; Filename: "{app}\net-merge-tray.exe"; IconFile
 Name: "{autodesktop}\net-merge"; Filename: "{app}\net-merge-tray.exe"; IconFilename: "{app}\net-merge.ico"; Tasks: desktopicon
 
 [Run]
-; As the signed-in user, whose settings these are. Silent installs can pass /MERGETASKS=!ispnames.
+; Silent installs can pass /MERGETASKS=!ispnames. It runs twice, because the settings are per Windows
+; account: once as the signed-in user, and once as the account Setup runs as. They are the same account
+; unless a standard user elevated with a different admin account, and then the tray, which runs elevated,
+; reads the admin account's settings and would never see the choice. The second run is harmless otherwise.
 Filename: "{app}\net-merge.exe"; Parameters: "isp-names off"; Flags: runhidden runasoriginaluser; Check: TurnIspNamesOff
+Filename: "{app}\net-merge.exe"; Parameters: "isp-names off"; Flags: runhidden; Check: TurnIspNamesOff
 Filename: "{app}\net-merge.exe"; Parameters: "autostart on"; Flags: runhidden; Tasks: autostart; StatusMsg: "Enabling start at sign-in..."
 ; The installer is already elevated, so the tray starts without a second UAC prompt.
 Filename: "{app}\net-merge-tray.exe"; Description: "Start net-merge now"; Flags: nowait postinstall skipifsilent
