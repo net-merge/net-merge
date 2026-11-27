@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"net-merge/internal/engine"
+	"net-merge/internal/state"
 )
 
 func TestShortenCountsUTF16AndKeepsRunesWhole(t *testing.T) {
@@ -99,5 +100,20 @@ func TestCoolTipSaysItIsOptIn(t *testing.T) {
 		if !strings.Contains(tip, want) {
 			t.Errorf("tooltip %q does not mention %q", tip, want)
 		}
+	}
+}
+
+// Ticking one saved box must not forget the other.
+func TestSaveSettingKeepsTheOthers(t *testing.T) {
+	u := &trayUI{stateDir: t.TempDir()}
+	if err := u.saveSetting(func(s *state.Settings) { s.PhoneCooling = true }); err != nil {
+		t.Fatal(err)
+	}
+	if err := u.saveSetting(func(s *state.Settings) { s.GameMode = true }); err != nil {
+		t.Fatal(err)
+	}
+	got, err := state.LoadSettings(u.stateDir)
+	if err != nil || !got.PhoneCooling || !got.GameMode {
+		t.Fatalf("saved %+v, %v", got, err)
 	}
 }

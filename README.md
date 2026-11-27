@@ -369,7 +369,11 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
    shows *cooling at 20 Mbit/s*, until it has had a 3-minute rest. This costs speed, so it is your choice;
    it is remembered after a restart. `net-merge tray -phone-cool 10` changes the 20, and
    `-phone "Ethernet 5"` treats another adapter, for example an Android phone, as a phone hotspot.
-7. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
+7. **Games and calls.** Tick *Keep a connection free for games and calls* (off by default). While one
+   connection carries a game or a voice call (a steady stream of small UDP packets for a few seconds), new
+   connections go over your other ones. Nothing is slowed down and open downloads stay where they are. It
+   is remembered after a restart.
+8. To start it at sign-in: tick *Start at sign-in* in the menu (or the box in the Windows installer, or run
    `net-merge autostart on`). On a Mac this needs `sudo net-merge install` once.
 
 Tips:

@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"net"
+	"net/netip"
 	"sync"
+	"time"
 
 	"net-merge/internal/nics"
 )
@@ -67,16 +69,93 @@ func (b *Balancer) DialPinned(ctx context.Context, host string, port int) (net.C
 	return &slotConn{TCPConn: c.(*net.TCPConn), sl: sl, fam: f, s: b.S, activity: b.S.track(sl, f)}, nil
 }
 
+// udpFlowActivity tracks per-socket UDP packet statistics within an active burst window to detect real-time game or voice traffic.
+type udpFlowActivity struct {
+	mu                        sync.Mutex
+	started, lastActive       time.Time
+	packets, smallPkts, bytes int64
+
+	// Who the socket talks to, over the current and the last peerWindow.
+	peers     map[netip.AddrPort]struct{}
+	peersAt   time.Time
+	lastPeers int
+}
+
+// A game or call talks to a few peers. A torrent client's DHT sends the same kind of small, steady
+// packets to hundreds. ponytail: a fixed cut-off; raise it if a peer-to-peer game is missed.
+const (
+	gamePeers  = 16
+	peerWindow = 10 * time.Second
+)
+
+func (u *udpFlowActivity) record(n int, addr net.Addr, now time.Time) {
+	// Skip non-game/background protocols per packet so a single DNS/QUIC probe does not permanently taint the socket.
+	if ua, ok := addr.(*net.UDPAddr); ok && (ua.Port == 53 || ua.Port == 123 || ua.Port == 443 || ua.Port == 5353) {
+		return
+	}
+	u.mu.Lock()
+	// Start a fresh activity window on the first valid packet or after >3s of idle time.
+	if u.started.IsZero() || now.Sub(u.lastActive) > 3*time.Second {
+		u.started = now
+		u.packets = 0
+		u.smallPkts = 0
+		u.bytes = 0
+		u.peers, u.lastPeers, u.peersAt = nil, 0, now
+	}
+	if now.Sub(u.peersAt) > peerWindow {
+		u.lastPeers, u.peers, u.peersAt = len(u.peers), nil, now
+	}
+	if ua, ok := addr.(*net.UDPAddr); ok && len(u.peers) <= gamePeers {
+		if u.peers == nil {
+			u.peers = map[netip.AddrPort]struct{}{}
+		}
+		u.peers[ua.AddrPort()] = struct{}{}
+	}
+	if now.After(u.lastActive) {
+		u.lastActive = now
+	}
+	u.packets++
+	u.bytes += int64(n)
+	if n < 600 {
+		u.smallPkts++
+	}
+	u.mu.Unlock()
+}
+
+// isGameLike reports whether the current active window sustains a low-bandwidth, steady stream of small UDP packets (>=5s, >=5 pkts/s, >=50% <600B, <1Mbps).
+func (u *udpFlowActivity) isGameLike(now time.Time) bool {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.started.IsZero() || now.Sub(u.lastActive) > 3*time.Second {
+		return false
+	}
+	if max(len(u.peers), u.lastPeers) > gamePeers {
+		return false
+	}
+	dur := now.Sub(u.started).Seconds()
+	if dur < 5 {
+		return false
+	}
+	pkts, small := float64(u.packets), float64(u.smallPkts)
+	return pkts/dur >= 5 && small >= 0.5*pkts && float64(u.bytes)*8/dur < 1_000_000
+}
+
 type slotPacketConn struct {
 	net.PacketConn
-	sl  *Slot
-	fam Family
+	sl   *Slot
+	fam  Family
+	s    *Scheduler
+	once sync.Once
+	udp  *udpFlowActivity
 }
 
 func (c *slotPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	n, a, err := c.PacketConn.ReadFrom(p)
 	if n > 0 {
 		c.sl.bytesIn[c.fam].Add(int64(n))
+		if c.udp != nil {
+			c.udp.record(n, a, c.s.now())
+		}
 		c.sl.throttlePacket(true, n)
 	}
 	return n, a, err
@@ -85,7 +164,12 @@ func (c *slotPacketConn) ReadFrom(p []byte) (int, net.Addr, error) {
 func (c *slotPacketConn) WriteTo(p []byte, a net.Addr) (int, error) {
 	c.sl.throttlePacket(false, len(p))
 	n, err := c.PacketConn.WriteTo(p, a)
-	c.sl.bytesOut[c.fam].Add(int64(n))
+	if n > 0 {
+		c.sl.bytesOut[c.fam].Add(int64(n))
+		if c.udp != nil {
+			c.udp.record(n, a, c.s.now())
+		}
+	}
 	return n, err
 }
 
@@ -115,6 +199,15 @@ func (b *Balancer) ListenUDP(ctx context.Context, f Family) (net.PacketConn, err
 			lastErr = err
 			continue
 		}
-		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f}, nil
+		return &slotPacketConn{PacketConn: pc, sl: sl, fam: f, s: b.S, udp: b.S.trackUDP(sl, f)}, nil
 	}
+}
+
+func (c *slotPacketConn) Close() error {
+	c.once.Do(func() {
+		if c.s != nil && c.udp != nil {
+			c.s.untrackUDP(c.sl, c.fam, c.udp)
+		}
+	})
+	return c.PacketConn.Close()
 }

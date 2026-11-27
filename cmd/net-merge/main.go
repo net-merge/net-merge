@@ -190,6 +190,7 @@ func (c *common) boot(mode func() string) (*engine.Scheduler, *engine.Balancer, 
 	}
 	sched.SetPhoneCooling(c.cooling.or(settings.PhoneCooling))
 	sched.SetCoolRate(c.cool)
+	sched.SetGameMode(settings.GameMode)
 	if limits, err := state.LoadLimits(c.stateDir); err != nil {
 		logx.Printf("warning: %v (ignored)\n", err) // a bad limits file must not stop merging
 	} else {

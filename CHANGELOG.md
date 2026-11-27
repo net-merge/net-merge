@@ -6,6 +6,9 @@ entry here before pushing a version tag.
 ## [Unreleased]
 
 ### Added
+- **Keep a connection free for games and calls**, a new menu item, off unless you tick it. While a
+  connection carries a game or a voice call, new connections go over your other ones. The choice is
+  remembered, also when net-merge starts at sign-in.
 - **An iPhone hotspot gets more rest, with no loss of speed.** net-merge now recognises an iPhone
   sharing its connection, over USB or Wi-Fi, and lets its mobile radio sleep more: it checks the phone
   for internet every 2 minutes instead of every 15 seconds (and not at all while data is arriving over

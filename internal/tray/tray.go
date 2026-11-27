@@ -52,7 +52,7 @@ type trayUI struct {
 	limitPreset [trayRows][]*systray.MenuItem
 
 	header, toggleItem, v6Item, autoItem, signInItem *systray.MenuItem
-	coolItem                                         *systray.MenuItem
+	coolItem, gameItem                               *systray.MenuItem
 	versionItem                                      *systray.MenuItem
 	rows                                             []*systray.MenuItem
 	lastOn                                           *bool
@@ -96,6 +96,7 @@ func (u *trayUI) onReady() {
 	}
 	systray.AddSeparator()
 	u.v6Item = systray.AddMenuItemCheckbox("Use all adapters (IPv6 only if every adapter has it)", "Ticked: apps are pushed to IPv4 so every adapter is used. Unticked: IPv6 is allowed and funnels onto the adapters that have it.", u.bal.V6Mode() == engine.V6Auto)
+	u.gameItem = systray.AddMenuItemCheckbox("Keep a connection free for games and calls", "Detects active game or voice UDP streams and keeps new downloads off that connection.", u.sched.GameMode())
 	u.autoItem = systray.AddMenuItemCheckbox("Pause when there is only one connection", "Pauses merging by itself when fewer than two connections have internet, and starts it again when a second one works. Pausing or starting by hand always wins.", u.ap.enabled)
 	u.coolItem = systray.AddMenuItemCheckbox("Cool down phone hotspots", coolTip(u.sched.CoolRate()), u.sched.PhoneCooling())
 	u.signInItem = systray.AddMenuItemCheckbox("Start at sign-in", "Starts net-merge when you sign in, with no password or admin prompt.", platform.AutostartEnabled())
@@ -124,6 +125,18 @@ func (u *trayUI) onReady() {
 			select {
 			case <-u.toggleItem.ClickedCh:
 				u.manual(!u.tun.IsOn())
+			case <-u.gameItem.ClickedCh:
+				on := !u.gameItem.Checked()
+				u.lastErr = ""
+				if err := u.saveSetting(func(s *state.Settings) { s.GameMode = on }); err != nil {
+					u.lastErr = "keep a connection free: " + err.Error()
+					logx.Printf("error: %s\n", u.lastErr)
+				} else if on {
+					u.gameItem.Check()
+				} else {
+					u.gameItem.Uncheck()
+				}
+				u.sched.SetGameMode(u.gameItem.Checked())
 			case <-u.autoItem.ClickedCh:
 				if u.autoItem.Checked() {
 					u.autoItem.Uncheck()
@@ -154,7 +167,7 @@ func (u *trayUI) onReady() {
 				on := !u.coolItem.Checked()
 				u.lastErr = ""
 				// Saved first, so the box never shows a choice that is gone after a restart.
-				if err := state.SaveSettings(u.stateDir, state.Settings{PhoneCooling: on}); err != nil {
+				if err := u.saveSetting(func(s *state.Settings) { s.PhoneCooling = on }); err != nil {
 					u.lastErr = "cool down phone hotspots: " + err.Error()
 					logx.Printf("error: %s\n", u.lastErr)
 				} else if on {
@@ -440,6 +453,13 @@ func shorten(s string, n int) string {
 		units += w
 	}
 	return s
+}
+
+// saveSetting changes one saved tray choice and leaves the others as they are.
+func (u *trayUI) saveSetting(set func(*state.Settings)) error {
+	s, _ := state.LoadSettings(u.stateDir) // a broken file is replaced
+	set(&s)
+	return state.SaveSettings(u.stateDir, s)
 }
 
 // coolTip explains the opt-in. A phone is always checked for internet gently and kept off light

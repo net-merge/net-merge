@@ -15,6 +15,8 @@ const settingsVersion = 1
 type Settings struct {
 	// PhoneCooling holds a phone hotspot to a lower speed after long heavy use (engine/phone.go).
 	PhoneCooling bool `json:"phone_cooling"`
+	// GameMode keeps new connections off a link that carries a game or a call (engine/flowconn.go).
+	GameMode bool `json:"game_mode"`
 }
 
 type settingsFile struct {

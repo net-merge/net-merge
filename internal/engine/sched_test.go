@@ -510,3 +510,100 @@ func TestFailedProbeIgnoredWhileDataArrives(t *testing.T) {
 		t.Fatalf("quiet link left %q", a.state[Fam4])
 	}
 }
+
+func TestGameModeSteersNewFlows(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4)
+	for i := 0; i < 12; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 20; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive")
+	}
+	for i := 0; i < 10; i++ {
+		got := s.Acquire(nil)
+		if got == nil || got.Name != "eth1" {
+			t.Fatalf("got %v", got)
+		}
+		s.Release(got)
+	}
+}
+
+func TestGameModeActivityWindowAndIgnoredPorts(t *testing.T) {
+	now := time.Now()
+	s := NewScheduler([]nics.Nic{{Name: "eth0", Index: 1, IP: net.ParseIP("10.0.0.1"), Weight: 1}, {Name: "eth1", Index: 2, IP: net.ParseIP("10.0.0.2"), Weight: 1}})
+	s.now = func() time.Time { return now }
+	s.SetGameMode(true)
+	sl0 := s.slots[0]
+	u := s.trackUDP(sl0, Fam4)
+
+	// Background DNS/QUIC probes followed by a 60s idle gap must neither trigger nor taint the socket.
+	u.record(64, &net.UDPAddr{IP: net.ParseIP("8.8.8.8"), Port: 53}, now)
+	u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 443}, now)
+	now = now.Add(60 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 inactive after background probes and idle gap")
+	}
+
+	// Sustaining small UDP packets for 6s should start a fresh window and steer new TCP flows to eth1.
+	for i := 0; i < 6; i++ {
+		now = now.Add(time.Second)
+		for p := 0; p < 10; p++ {
+			u.record(120, &net.UDPAddr{IP: net.ParseIP("1.1.1.1"), Port: 27015}, now)
+		}
+		s.Tick(time.Second)
+	}
+	if !sl0.gameActive {
+		t.Fatal("expected eth0 gameActive after 6s active burst")
+	}
+	if got := s.Acquire(nil); got == nil || got.Name != "eth1" {
+		t.Fatalf("expected steering to eth1, got %v", got)
+	} else {
+		s.Release(got)
+	}
+
+	// Idle >3s should clear gameActive.
+	now = now.Add(4 * time.Second)
+	s.Tick(time.Second)
+	if sl0.gameActive {
+		t.Fatal("expected eth0 gameActive cleared after >3s idle")
+	}
+}
+
+// A torrent client's DHT also sends small packets steadily, but to far more peers than a game.
+func TestManyPeersIsNotAGame(t *testing.T) {
+	now := time.Now()
+	u := &udpFlowActivity{}
+	for i := range 300 {
+		now = now.Add(100 * time.Millisecond)
+		u.record(120, &net.UDPAddr{IP: net.IPv4(10, 1, byte(i>>8), byte(i)), Port: 6881}, now)
+		if i > 60 && u.isGameLike(now) {
+			t.Fatalf("taken for a game after %d packets to %d peers", i+1, i+1)
+		}
+	}
+}
+
+// A phone on standby must not push a new flow back onto the link that carries the game.
+func TestGameModeWinsOverStandby(t *testing.T) {
+	phone := nic("phone", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{nic("wire", "10.0.0.1", 1), phone})
+	s.SetGameMode(true)
+	for _, sl := range s.slots {
+		s.SetState(sl, Fam4, true)
+	}
+	s.slots[0].peak[Fam4], s.slots[1].peak[Fam4] = 10e6, 5e6
+	s.slots[0].gameActive = true
+	if got := s.Acquire(nil); got.Name != "phone" {
+		t.Fatalf("new flow went to %s, the link with the game", got.Name)
+	}
+}
