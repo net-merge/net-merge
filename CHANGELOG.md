@@ -23,7 +23,7 @@ entry here before pushing a version tag.
   starts at sign-in. `-phone-cooling` turns it on for one run and `-phone-cool 10` changes the 20.
 - **Adapter icons in the tray menu.** Each adapter shows a Wi-Fi, Ethernet, phone or USB tether, or
   generic network icon, chosen from what the system says the adapter is (on Windows 11 they are the
-  menu's own Fluent icons). It is only a picture; it never changes which adapter is used.
+  menu's own Fluent icons). The other menu rows have icons too, on macOS, Linux and Windows. It is only a picture; it never changes which adapter is used.
 - **Optional ISP names in adapter rows.** Tick **Look up ISP names** in the tray. It is off
   by default. When on, net-merge asks `ipwho.is` (or `ipinfo.io` if that fails), through that adapter,
   who provides it; the service sees that adapter's public IP address and nothing else.

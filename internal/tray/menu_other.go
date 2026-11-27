@@ -29,6 +29,12 @@ func setAdapterIcon(it *menuItem, kind nics.Kind) {
 	it.SetTemplateIcon(template, regular)
 }
 
+// setSymbol shows a menu row's icon.
+func setSymbol(it *menuItem, name string) {
+	template, regular := icon.Adapter(name)
+	it.SetTemplateIcon(template, regular)
+}
+
 // leftToRight is U+200E, an invisible mark. In front of a row it keeps the row's numbers on the same
 // side after an Arabic or Hebrew name.
 const leftToRight = string(rune(0x200E))

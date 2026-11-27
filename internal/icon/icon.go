@@ -62,6 +62,9 @@ func clamp01(v float64) float64 { return math.Max(0, math.Min(1, v)) }
 
 func distToSeg(px, py, ax, ay, bx, by float64) float64 {
 	dx, dy := bx-ax, by-ay
-	t := clamp01(((px-ax)*dx + (py-ay)*dy) / (dx*dx + dy*dy))
+	t := 0.0 // a segment of no length is a dot
+	if l := dx*dx + dy*dy; l > 0 {
+		t = clamp01(((px-ax)*dx + (py-ay)*dy) / l)
+	}
 	return math.Hypot(px-(ax+t*dx), py-(ay+t*dy))
 }

@@ -32,3 +32,6 @@ func setAdapterIcon(it *menuItem, kind nics.Kind) { it.SetAdapterKind(string(kin
 // text's direction is set by the menu. The mark after an alias (see adapterRow) still keeps the
 // numbers on the same side.
 func menuText(s string) string { return s }
+
+// setSymbol does nothing here: this menu picks each row's icon from its text (internal/winmenu).
+func setSymbol(*menuItem, string) {}

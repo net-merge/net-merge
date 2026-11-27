@@ -10,8 +10,8 @@ import (
 	"runtime"
 )
 
-// Adapter returns a black macOS template and a regular platform-format icon.
-// The four original glyphs are compiled into the binary; no images are downloaded.
+// Adapter returns a black macOS template and a regular platform-format icon, for an adapter kind or a
+// menu row (see menuGlyph). The glyphs are drawn here; no images are downloaded.
 func Adapter(kind string) (template, regular []byte) {
 	return adapterPNG(kind, color.NRGBA{A: 255}), adapterRegular(kind)
 }
@@ -48,6 +48,9 @@ func adapterPNG(kind string, ink color.NRGBA) []byte {
 	case "phone":
 		lines = [][4]float64{{9, 4, 23, 4}, {23, 4, 23, 28}, {23, 28, 9, 28}, {9, 28, 9, 4}, {13, 8, 19, 8}, {14, 24, 18, 24}}
 	default:
+		if lines = menuGlyph(kind); lines != nil {
+			break
+		}
 		lines = [][4]float64{{11, 5, 21, 5}, {21, 5, 21, 14}, {21, 14, 11, 14}, {11, 14, 11, 5}, {16, 14, 16, 20}, {6, 20, 26, 20}, {6, 20, 6, 24}, {26, 20, 26, 24}, {2, 25, 10, 25}, {10, 25, 10, 29}, {10, 29, 2, 29}, {2, 29, 2, 25}, {22, 25, 30, 25}, {30, 25, 30, 29}, {30, 29, 22, 29}, {22, 29, 22, 25}}
 	}
 	img := image.NewNRGBA(image.Rect(0, 0, size, size))

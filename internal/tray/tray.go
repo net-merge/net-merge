@@ -124,6 +124,13 @@ func (u *trayUI) setupMenu() *menuItem {
 	u.toggleItem = addMenuItem("Start merging", "")
 	u.versionItem = addMenuItem(versionLabel(u.version), "The version of net-merge that is running (the same as net-merge version). Click to open the release page on GitHub.")
 	quit := addMenuItem("Quit", "Turns system-wide mode off and exits")
+	for it, name := range map[*menuItem]string{
+		u.header: "speed", u.ispItem: "isp", u.v6Item: "globe", u.gameItem: "game",
+		u.autoItem: "link", u.coolItem: "cool", u.signInItem: "person", u.toggleItem: "play",
+		u.versionItem: "info", quit: "power",
+	} {
+		setSymbol(it, name)
+	}
 	return quit
 }
 
@@ -320,9 +327,11 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 		if on {
 			systray.SetIcon(u.iconOn)
 			u.toggleItem.SetTitle("Pause merging")
+			setSymbol(u.toggleItem, "pause")
 		} else {
 			systray.SetIcon(u.iconOff)
 			u.toggleItem.SetTitle("Start merging")
+			setSymbol(u.toggleItem, "play")
 		}
 		u.lastOn = &on
 	}
