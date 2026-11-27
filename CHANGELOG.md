@@ -36,7 +36,8 @@ entry here before pushing a version tag.
   service sees that adapter's public IP address. On by default; untick *Show ISP Names* to stop it, or
   untick it in the Windows installer, which now shows the privacy text first.
 - **Display names for adapters.** `net-merge alias <adapter> [name]` sets or removes a name that the
-  tray, `net-merge status` and `net-merge list` show beside the system name; balancing is unchanged.
+  tray shows in place of the system name, and `net-merge status` and `net-merge list` beside it;
+  balancing is unchanged.
 
 ### Changed
 - **A shorter tray menu.** Rows show just the name and speeds (`↓79 ↑7.0`, in Mbps as on the top line),
@@ -53,7 +54,7 @@ entry here before pushing a version tag.
   on Linux.
 - **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
   internet check too late, so it got no new connections and merging could pause by itself, cutting
-  every open download. While data is still arriving, a failed check is now ignored.
+  every open download. While a download is still arriving, a failed check is now ignored.
 - **Merging no longer gets stuck on one connection.** If one connection happened to carry a big
   download while the other only loaded web pages, the second looked much slower than it was and got
   almost no new connections, so it never showed its real speed. Merging stayed one-sided until it was

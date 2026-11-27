@@ -35,9 +35,9 @@ func (u *trayUI) watchUpdates() {
 				logx.Printf("update check: %v (next try in %s)\n", err, retry)
 				wait, retry = retry, min(2*retry, updateMax)
 			} else {
-				retry = updateRetry                                           // a success means the network works again
-				if update.Newer(u.version, latest) && u.checkUpdates.Load() { // not unticked meanwhile
-					u.showUpdate(latest)
+				retry = updateRetry // a success means the network works again
+				if update.Newer(u.version, latest) {
+					u.newRelease <- latest // only the menu loop touches the version line
 				}
 			}
 		}

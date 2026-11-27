@@ -67,6 +67,7 @@ type trayUI struct {
 	lastTitle                                        string
 	checkUpdates, updateShown                        atomic.Bool
 	recheck                                          chan struct{}
+	newRelease                                       chan string // from watchUpdates to the menu loop
 	rows                                             []*menuItem
 	lastOn                                           *bool
 	lastHeader                                       string
@@ -131,6 +132,7 @@ func (u *trayUI) setupMenu() *menuItem {
 	settings, _ := state.LoadSettings(u.stateDir) // a bad file was already reported at start
 	u.checkUpdates.Store(!settings.NoUpdateCheck)
 	u.recheck = make(chan struct{}, 1)
+	u.newRelease = make(chan string)
 	u.updatesItem = addMenuItemCheckbox("Check For Updates", "Asks GitHub for the newest release number at start and every 6 hours.", !settings.NoUpdateCheck)
 	u.showSpeed = !settings.HideSpeed
 	if runtime.GOOS == "darwin" { // only the macOS menu bar has room for text beside the icon
@@ -241,6 +243,10 @@ func (u *trayUI) onReady() {
 					u.speedItem.Uncheck()
 				}
 				u.showSpeed = on
+			case latest := <-u.newRelease:
+				if u.checkUpdates.Load() { // not unticked meanwhile
+					u.showUpdate(latest)
+				}
 			case <-u.updatesItem.ClickedCh:
 				on := !u.updatesItem.Checked()
 				u.lastErr = ""
@@ -272,8 +278,8 @@ func (u *trayUI) onReady() {
 				if req, ok := state.TakeAlias(u.stateDir); ok {
 					if err := state.SetAlias(u.stateDir, req.Adapter, req.Alias); err != nil {
 						u.lastErr = "alias: " + err.Error()
-					} else {
-						u.prefs, _ = state.LoadTrayPreferences(u.stateDir)
+					} else if p, err := state.LoadTrayPreferences(u.stateDir); err == nil {
+						u.applyPrefs(p)
 					}
 				}
 				if req, ok := state.TakeLimit(u.stateDir); ok { // `net-merge limit ...` from a terminal
@@ -470,7 +476,7 @@ func (u *trayUI) refreshMetadata(live []engine.SlotStats) {
 func (u *trayUI) toggleISP() {
 	p, err := state.LoadTrayPreferences(u.stateDir)
 	if err == nil {
-		p.LookupISP = !p.LookupISP
+		p.LookupISP = !u.ispItem.Checked() // what the click asked for, whatever the file says by now
 		err = state.SaveTrayPreferences(u.stateDir, p)
 	}
 	if err != nil {
@@ -478,6 +484,12 @@ func (u *trayUI) toggleISP() {
 		logx.Printf("error: %s\n", u.lastErr)
 		return
 	}
+	u.applyPrefs(p)
+}
+
+// applyPrefs puts preferences read from disk on screen: net-merge isp-names or alias may have
+// changed them since the tray started.
+func (u *trayUI) applyPrefs(p state.TrayPreferences) {
 	u.prefs = p
 	if p.LookupISP {
 		u.ispItem.Check()

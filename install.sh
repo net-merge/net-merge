@@ -195,8 +195,6 @@ if [ "$(uname -s)" = Darwin ]; then
     $SUDO mkdir -p /usr/local/bin   # where `net-merge install` puts its root-owned copy
     if [ "$method" = auto ] && have brew && [ "$(id -u)" != 0 ]; then homebrew; else tarball; fi
 elif [ "$(uname -s)" = Linux ]; then
-    # a running tray keeps the old version until it is restarted below
-    have pgrep && pgrep -f 'net-merge tray' >/dev/null && { net-merge quit >/dev/null 2>&1 || true; sleep 2; }
     if [ -f /etc/NIXOS ]; then
         die "on NixOS use the module instead: $REPO#nixos"
     elif [ "$method" != auto ]; then tarball
@@ -216,11 +214,17 @@ have net-merge || PATH=$PATH:/usr/local/bin
 say "Installed $(net-merge version)"
 
 # ---- start the tray: on a Mac, or on a Linux desktop session that isn't root's
+# a tray that is still running has the old version: it is stopped only once the new one is in place,
+# and only where it can be started again
+running=
+have pgrep && pgrep -f 'net-merge tray' >/dev/null && running=1
 if [ "${NET_MERGE_NO_START:-}" = 1 ]; then
-    say "Start it with: net-merge tray"
+    say "Start it with: net-merge tray${running:+ (quit the running one first)}"
 elif [ "$(uname -s)" = Darwin ] || { [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && [ "$(id -u)" != 0 ]; }; then
+    [ -n "$running" ] && { net-merge quit >/dev/null 2>&1 || true; sleep 2; }
     nohup net-merge tray >/dev/null 2>&1 &
     say "Started: look for the net-merge icon in the menu bar or tray. To start it at sign-in: net-merge autostart on"
 else
     say "Start it with: net-merge tray (from your desktop session), or net-merge run (any terminal, as root)"
+    [ -n "$running" ] && say "The running net-merge is still the old version: quit it and start it again"
 fi
