@@ -38,6 +38,7 @@ func fullMenu() []*Item {
 		row("Auto-Pause", true, true, false),
 		row("Cool Down Phone", true, false, false),
 		row("Start at Sign-In", true, false, false),
+		row("Check For Updates", true, true, false),
 		row("Pause Merging", false, false, false),
 		row("v0.3.7", false, false, false),
 		row("Quit", false, false, false),
