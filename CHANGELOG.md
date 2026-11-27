@@ -9,6 +9,11 @@ entry here before pushing a version tag.
 - **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
   internet check too late, so it got no new connections and merging could pause by itself, cutting
   every open download. While data is still arriving, a failed check is now ignored.
+- **Merging no longer gets stuck on one connection.** If one connection happened to carry a big
+  download while the other only loaded web pages, the second looked much slower than it was and got
+  almost no new connections, so it never showed its real speed. Merging stayed one-sided until it was
+  paused and started again. Now a connection that looks slower still gets a share of new connections,
+  so a wrong guess is corrected within seconds.
 
 ## [0.3.7] - 2026-11-09
 

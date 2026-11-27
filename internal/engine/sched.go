@@ -271,8 +271,15 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 // A NIC counts as measured once it has carried this much (bytes/s, about 0.4 Mbit/s).
 const minMeasuredPeak = 50_000
 
+// The lowest automatic weight. Throughput only shows what a link was asked for: a link that carried
+// web pages while another carried a download looks 100x slower without being so. At 0.5 the
+// "slower" link still gets every third new flow, so a wrong estimate is corrected by real traffic
+// within seconds. (At 0.05 it needed twenty busy flows on the other link, which in practice meant
+// never: one unlucky early sample switched a link off for good, until merging was paused.)
+const minWeight = 0.5
+
 // Tick samples flow activity and throughput per family. Automatic weights follow
-// smoothed capacity estimates (floored at 0.05). Until all links are measured,
+// smoothed capacity estimates (floored at minWeight). Until all links are measured,
 // weights stay equal. Quiet links retain capacity, while stale low estimates
 // recover up to half the best link's capacity so they can be measured again.
 func (s *Scheduler) Tick(dt time.Duration) {
@@ -315,6 +322,8 @@ func (s *Scheduler) Tick(dt time.Duration) {
 		var maxPeak float64
 		live, measured := 0, true
 		idle := map[*Slot]bool{}
+		// How many flows each link is moving data on, and the average over the live links.
+		var busySum, busyN int64
 		for _, sl := range s.slots {
 			for a := range sl.flows[f] {
 				n := a.bytes.Load()
@@ -325,12 +334,24 @@ func (s *Scheduler) Tick(dt time.Duration) {
 				}
 				a.last = n
 			}
+			if sl.present && sl.ip(f) != nil {
+				busySum += sl.busy(f)
+				busyN++
+			}
+		}
+		for _, sl := range s.slots {
 			in, out := sl.bytesIn[f].Load(), sl.bytesOut[f].Load()
 			sl.rateIn[f] = float64(in-sl.lastIn[f]) / sec
 			sl.rateOut[f] = float64(out-sl.lastOut[f]) / sec
 			sl.lastIn[f], sl.lastOut[f] = in, out
 			r := sl.rateIn[f] + sl.rateOut[f]
-			if r >= minMeasuredPeak && r >= 0.05*sl.peak[f] {
+			// A link that was given fewer busy flows than the others only shows what those flows
+			// asked for, not what the link can do. Letting that lower its estimate starves it: a lower
+			// weight brings fewer flows, which keep the estimate low, for good. So a falling sample only
+			// counts on a link carrying at least its share; a rising one always does (a link can't move
+			// more than it can carry).
+			fairShare := busyN == 0 || sl.busy(f)*busyN >= busySum
+			if r >= minMeasuredPeak && r >= 0.05*sl.peak[f] && (r >= sl.peak[f] || fairShare) {
 				if sl.peak[f] == 0 {
 					sl.peak[f] = r
 				} else {
@@ -373,7 +394,7 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			if live < 2 || !measured {
 				sl.weight[f] = 1
 			} else {
-				sl.weight[f] = math.Max(0.05, sl.peak[f]/maxPeak)
+				sl.weight[f] = math.Max(minWeight, sl.peak[f]/maxPeak)
 			}
 		}
 	}
