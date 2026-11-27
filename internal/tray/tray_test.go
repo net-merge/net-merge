@@ -161,13 +161,19 @@ func TestSaveSettingKeepsTheOthers(t *testing.T) {
 	}
 }
 
-func TestSpeedTitle(t *testing.T) {
-	for _, c := range []struct {
-		on, show bool
-		want     string
-	}{{true, true, " ↓80 ↑4.0"}, {false, true, ""}, {true, false, ""}} {
-		if got := speedTitle(c.on, c.show, 1e7, 5e5); got != c.want {
-			t.Errorf("speedTitle(%v, %v) = %q, want %q", c.on, c.show, got, c.want)
-		}
+func TestSpeedNow(t *testing.T) {
+	live := []engine.SlotStats{
+		{Name: "en0", IP: "192.168.0.5", LinkIn: 1e6, LinkOut: 2e5},
+		{Name: "en5", IP: "10.0.0.2", IP6: "2001:db8::2", LinkIn: 3e6, LinkOut: 4e5},
+	}
+	def := func() string { return "2001:db8::2" }
+	if down, up, ok := speedNow(true, live, def); !ok || down != 4e6 || up != 6e5 {
+		t.Errorf("merging: %v %v %v, want the total", down, up, ok)
+	}
+	if down, up, ok := speedNow(false, live, def); !ok || down != 3e6 || up != 4e5 {
+		t.Errorf("paused: %v %v %v, want the default adapter's", down, up, ok)
+	}
+	if _, _, ok := speedNow(false, live, func() string { return "" }); ok {
+		t.Error("paused with no internet: there is no default adapter to show")
 	}
 }

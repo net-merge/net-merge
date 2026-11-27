@@ -62,9 +62,9 @@ type trayUI struct {
 	coolItem, gameItem                               *menuItem
 	versionItem                                      *menuItem
 	updatesItem                                      *menuItem
-	speedItem                                        *menuItem // macOS only, else nil
+	speedItem                                        *menuItem // macOS and Windows, else nil
 	showSpeed                                        bool
-	lastTitle                                        string
+	lastSpeed                                        string
 	checkUpdates, updateShown                        atomic.Bool
 	recheck                                          chan struct{}
 	newRelease                                       chan string // from watchUpdates to the menu loop
@@ -135,8 +135,8 @@ func (u *trayUI) setupMenu() *menuItem {
 	u.newRelease = make(chan string)
 	u.updatesItem = addMenuItemCheckbox("Check For Updates", "Asks GitHub for the newest release number at start and every 6 hours.", !settings.NoUpdateCheck)
 	u.showSpeed = !settings.HideSpeed
-	if runtime.GOOS == "darwin" { // only the macOS menu bar has room for text beside the icon
-		u.speedItem = addMenuItemCheckbox("Show Speed", "Shows the total speed next to the icon in the menu bar while merging.", u.showSpeed)
+	if runtime.GOOS == "darwin" || runtime.GOOS == "windows" { // Linux panels: net-merge status -waybar
+		u.speedItem = addMenuItemCheckbox("Show Speed", "Shows download and upload beside the icon: all connections while merging, the default one while paused.", u.showSpeed)
 		setSymbol(u.speedItem, "speed")
 	}
 	u.toggleItem = addMenuItem("Start Merging", "")
@@ -393,10 +393,7 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 		down += s.LinkIn
 		up += s.LinkOut
 	}
-	if t := speedTitle(on, u.speedItem != nil && u.showSpeed, down, up); t != u.lastTitle {
-		systray.SetTitle(t)
-		u.lastTitle = t
-	}
+	u.refreshSpeed(on, live)
 	state := stateWord(on)
 	if !on && u.ap.enabled && u.ap.waiting && !u.ap.manualOff {
 		state = "Paused: One Connection"
@@ -711,12 +708,49 @@ func (u *trayUI) applyLimit(name string, mbitPerSec float64) {
 	}
 }
 
-// speedTitle is the text beside the menu bar icon: the total, only while merging.
-func speedTitle(on, show bool, down, up float64) string {
-	if !on || !show {
-		return ""
+// refreshSpeed keeps the speed beside the icon current, if Show Speed is ticked.
+func (u *trayUI) refreshSpeed(on bool, live []engine.SlotStats) {
+	down, up := "", ""
+	if u.speedItem != nil && u.showSpeed {
+		if d, p, ok := speedNow(on, live, defaultAddr); ok {
+			down, up = mbps(d), mbps(p)
+		}
 	}
-	return " ↓" + mbps(down) + " ↑" + mbps(up)
+	if key := fmt.Sprint(on, down, " ", up); key != u.lastSpeed {
+		setTraySpeed(down, up, on)
+		u.lastSpeed = key
+	}
+}
+
+// speedNow is the traffic to show: every adapter together while merging, else the default adapter's.
+func speedNow(on bool, live []engine.SlotStats, defaultAddr func() string) (down, up float64, ok bool) {
+	if on {
+		for _, s := range live {
+			down, up = down+s.LinkIn, up+s.LinkOut
+		}
+		return down, up, true
+	}
+	if addr := defaultAddr(); addr != "" {
+		for _, s := range live {
+			if s.IP == addr || s.IP6 == addr {
+				return s.LinkIn, s.LinkOut, true
+			}
+		}
+	}
+	return 0, 0, false
+}
+
+// defaultAddr is the local address the system would use for the internet, so the default adapter's.
+// Connecting a UDP socket only picks the route: nothing is sent.
+func defaultAddr() string {
+	for _, target := range []string{"1.1.1.1:53", "[2606:4700:4700::1111]:53"} {
+		if c, err := net.Dial("udp", target); err == nil {
+			addr := c.LocalAddr().(*net.UDPAddr).IP.String()
+			c.Close()
+			return addr
+		}
+	}
+	return ""
 }
 
 // speedClicks is nil, which never fires in a select, where there is no Show Speed box.
