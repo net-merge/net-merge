@@ -601,6 +601,8 @@ connects to:
 - `1.1.1.1` and `8.8.8.8` (Cloudflare and Google public DNS, and their IPv6 addresses), port 443: a
   connection that sends no data, to see whether each of your connections has internet.
 - `api.github.com`: the tray reads the newest release number, at start and every 6 hours.
+- `ipwho.is`, or `ipinfo.io` if that fails: only if you tick *Look up ISP names*. The service sees that
+  connection's public IP address.
 
 The Linux package server, `pkg.net-merge.org`, counts how many different computers check for updates each
 day. For that it keeps a salted hash of each IP address, for that day only.
