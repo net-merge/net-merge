@@ -7,8 +7,8 @@ entry here before pushing a version tag.
 
 ### Added
 - **Check For Updates**, a tick box in the menu, on by default. When a newer release is out the version
-  line says *(Update Available)*, and clicking it opens net-merge.org, where the download and the install
-  command for your computer are. Untick the box to stop the check.
+  line says *(Update Available)*, and clicking it opens net-merge.org/changelog: what changed, with the download
+  on top. Untick the box to stop the check.
 - **Game Mode**, a new menu item, off unless you tick it. While a
   connection carries a game or a voice call, new connections go over your other ones. The choice is
   remembered, also when net-merge starts at sign-in.
@@ -45,6 +45,8 @@ entry here before pushing a version tag.
   any display scale and on every monitor. macOS and Linux keep their native menus.
 
 ### Fixed
+- **Running the install command again now updates** on dnf, yum and apk too, and restarts a running tray
+  on Linux.
 - **A connection that is full is no longer treated as offline.** A busy mobile link could answer the
   internet check too late, so it got no new connections and merging could pause by itself, cutting
   every open download. While data is still arriving, a failed check is now ignored.

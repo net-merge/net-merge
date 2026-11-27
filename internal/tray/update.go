@@ -78,14 +78,14 @@ func (u *trayUI) showUpdate(latest string) {
 	logx.Printf("update check: %s is available\n", latest)
 	u.updateShown.Store(true)
 	u.versionItem.SetTitle(updateLabel(u.version))
-	u.versionItem.SetTooltip(versionLabel(latest) + " is out. Click to open net-merge.org and update.")
+	u.versionItem.SetTooltip(versionLabel(latest) + " is out. Click to see what changed and update.")
 	setSymbol(u.versionItem, "download")
 }
 
 // versionURL is where a click on the version line goes.
 func (u *trayUI) versionURL() string {
 	if u.updateShown.Load() {
-		return update.HomeURL
+		return update.ChangelogURL
 	}
 	return update.ReleasesURL
 }

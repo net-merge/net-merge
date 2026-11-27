@@ -361,7 +361,7 @@ on your other connection when it is at least as fast; see [Use it](#use-it).
    line above *Quit* is the version you are running, like `v0.3.3`. With *Check For Updates*
    ticked (the default), net-merge reads the newest release number from GitHub (at start, and again every
    6 hours) and the line says *v0.3.3 (Update Available)* if there is one; click it to open
-   [net-merge.org](https://net-merge.org/#install) and update. Click a connection to cap it at 1, 2, 5, 10, 20, 50 or 100 Mbit/s
+   [net-merge.org/changelog](https://net-merge.org/changelog): what changed, with the download. Click a connection to cap it at 1, 2, 5, 10, 20, 50 or 100 Mbit/s
    (or *Unlimited*). For any other speed, from a terminal: `net-merge limit "Ethernet 2" 25` (Mbit/s; 0 or
    `unlimited` removes the cap), and `net-merge limit` lists what is set. The cap covers its downloads and
    uploads and is remembered after a restart. Only traffic net-merge relays is capped: an app bound directly

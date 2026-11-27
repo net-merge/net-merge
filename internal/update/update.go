@@ -18,8 +18,8 @@ const Repo = "net-merge/net-merge"
 // ReleasesURL is what the tray opens: GitHub redirects it to the newest release.
 const ReleasesURL = "https://github.com/" + Repo + "/releases/latest"
 
-// HomeURL is where an update is offered: the download and install command for this computer.
-const HomeURL = "https://net-merge.org/#install"
+// ChangelogURL is where an update is offered: what changed, with the download on top.
+const ChangelogURL = "https://net-merge.org/changelog"
 
 var (
 	client  = &http.Client{Timeout: 8 * time.Second}
