@@ -3,7 +3,7 @@
 What changed in each release. Each version's section becomes its GitHub release notes, so add the
 entry here before pushing a version tag.
 
-## [Unreleased]
+## [0.4.1] - 2026-11-28
 
 ### Fixed
 - **Speed limits and *Cool Down Phone* hold again under load.** A capped link's speed estimate crept
