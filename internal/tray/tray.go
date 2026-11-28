@@ -424,10 +424,7 @@ func (u *trayUI) refreshMenu(on bool, live []engine.SlotStats) {
 			r.Show()
 			u.lastRows[i] = txt
 		}
-		kind := u.kinds[s.Name]
-		if kind == "" {
-			kind = nics.Unknown
-		}
+		kind := rowKind(u.kinds, s)
 		if kind != u.lastKinds[i] {
 			setAdapterIcon(r, kind)
 			u.lastKinds[i] = kind
@@ -470,12 +467,22 @@ func (u *trayUI) refreshMetadata(live []engine.SlotStats) {
 	u.providers.Refresh(u.adapters, u.prefs.LookupISP)
 }
 
-func (u *trayUI) toggleISP() {
-	p, err := state.LoadTrayPreferences(u.stateDir)
-	if err == nil {
-		p.LookupISP = !u.ispItem.Checked() // what the click asked for, whatever the file says by now
-		err = state.SaveTrayPreferences(u.stateDir, p)
+// rowKind is the icon of an adapter's row. The driver and description decide it, except for a link
+// the scheduler treats as a phone: an iPhone hotspot joined over Wi-Fi (found by its address) or an
+// adapter named with -phone, which its driver doesn't reveal.
+func rowKind(kinds map[string]nics.Kind, s engine.SlotStats) nics.Kind {
+	if s.Phone {
+		return nics.Phone
 	}
+	if k := kinds[s.Name]; k != "" {
+		return k
+	}
+	return nics.Unknown
+}
+
+func (u *trayUI) toggleISP() {
+	want := !u.ispItem.Checked() // what the click asked for, whatever the file says by now
+	p, err := state.UpdateTrayPreferences(u.stateDir, func(p *state.TrayPreferences) { p.LookupISP = want })
 	if err != nil {
 		u.lastErr = "ISP lookup preference: " + err.Error()
 		logx.Printf("error: %s\n", u.lastErr)

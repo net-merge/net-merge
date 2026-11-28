@@ -163,7 +163,7 @@ func (b *Balancer) DialTCP(ctx context.Context, host string, port int) (net.Conn
 		c := classify(err)
 		if c.linkDown {
 			b.S.Fail(sl, f, b.FailCooldown)
-		} else if c.retry {
+		} else if c.retry && ctx.Err() == nil { // not when the caller gave up: that says nothing about the link
 			b.S.Suspect(sl, f)
 		}
 		rep, lastErr = c.rep, err

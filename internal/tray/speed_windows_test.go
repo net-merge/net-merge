@@ -2,6 +2,7 @@ package tray
 
 import (
 	"image/color"
+	"runtime"
 	"testing"
 	"unsafe"
 
@@ -68,6 +69,10 @@ func TestIconFromPictureIsTheSizeAskedForWithAlpha(t *testing.T) {
 // Each new picture is a new HICON, and the one it replaces is destroyed. This is that cycle, thousands of
 // times, with the two handle counts watched. (speed_live_windows_test.go does it through the real tray.)
 func TestMakingAndDestroyingIconsDoesNotLeakHandles(t *testing.T) {
+	// One OS thread throughout: each new thread that calls into USER32 gets a few USER objects of its
+	// own, which made the count grow by 3 now and then although no icon leaked.
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
 	cycle := func(i int) {
 		h := hiconFromImage(speedIconImage(Mbps(float64(i%1500)*125000), "7.0", i%2 == 0, i%3 == 0, 16+4*(i%5)))
 		if h == 0 {

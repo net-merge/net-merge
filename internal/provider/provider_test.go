@@ -160,3 +160,66 @@ func eventually(t *testing.T, predicate func() bool) {
 		time.Sleep(time.Millisecond)
 	}
 }
+
+// At sign-in the tray can start before the network is up. A failed lookup is tried again after a
+// minute, then less and less often, never on every Refresh; a name, once found, is kept.
+func TestResolverRetriesFailuresWithBackoff(t *testing.T) {
+	r := New()
+	defer r.Close()
+	var clock atomic.Int64
+	clock.Store(time.Unix(1000, 0).UnixNano())
+	r.now = func() time.Time { return time.Unix(0, clock.Load()) }
+	advance := func(d time.Duration) { clock.Add(int64(d)) }
+	var calls atomic.Int32
+	var online atomic.Bool
+	r.lookup = func(context.Context, nics.Nic) (string, error) {
+		calls.Add(1)
+		if online.Load() {
+			return "Current ISP", nil
+		}
+		return "", errors.New("offline")
+	}
+	settled := func() bool { // the last lookup has finished
+		r.mu.Lock()
+		defer r.mu.Unlock()
+		e := r.entries["Ethernet"]
+		return e != nil && (e.failed || e.name != "")
+	}
+	adapters := []nics.Nic{{Name: "Ethernet", IP: net.ParseIP("10.0.0.2")}}
+	r.Refresh(adapters, true)
+	eventually(t, settled)
+	want := int32(1)
+	for _, wait := range []time.Duration{time.Minute, 2 * time.Minute, 4 * time.Minute} {
+		advance(wait - time.Second)
+		for range 5 {
+			r.Refresh(adapters, true)
+		}
+		if calls.Load() != want {
+			t.Fatalf("retried before %s: %d calls, want %d", wait, calls.Load(), want)
+		}
+		advance(time.Second)
+		r.Refresh(adapters, true)
+		want++
+		eventually(t, func() bool { return calls.Load() == want })
+		eventually(t, settled)
+	}
+	online.Store(true)
+	advance(8 * time.Minute)
+	r.Refresh(adapters, true)
+	eventually(t, func() bool { return r.Get("Ethernet") == "Current ISP" })
+	advance(time.Hour)
+	for range 5 {
+		r.Refresh(adapters, true)
+	}
+	if calls.Load() != want+1 {
+		t.Fatalf("a found name was looked up again: %d calls", calls.Load())
+	}
+}
+
+func TestRetryAfterIsCapped(t *testing.T) {
+	for fails, want := range map[int]time.Duration{1: time.Minute, 2: 2 * time.Minute, 5: 16 * time.Minute, 6: 30 * time.Minute, 60: 30 * time.Minute} {
+		if got := retryAfter(fails); got != want {
+			t.Errorf("retryAfter(%d) = %s, want %s", fails, got, want)
+		}
+	}
+}

@@ -7,6 +7,7 @@ import (
 	"unicode/utf8"
 
 	"net-merge/internal/engine"
+	"net-merge/internal/nics"
 	"net-merge/internal/state"
 )
 
@@ -175,5 +176,25 @@ func TestSpeedNow(t *testing.T) {
 	}
 	if _, _, ok := speedNow(false, live, func() string { return "" }); ok {
 		t.Error("paused with no internet: there is no default adapter to show")
+	}
+}
+
+// An iPhone hotspot joined over Wi-Fi, or an adapter named with -phone, is a phone to the
+// scheduler, so its row shows the phone icon although its driver says Wi-Fi.
+func TestRowKindFollowsThePhoneMark(t *testing.T) {
+	kinds := map[string]nics.Kind{"Wi-Fi": nics.WiFi, "Ethernet": nics.Ethernet}
+	for _, c := range []struct {
+		s    engine.SlotStats
+		want nics.Kind
+	}{
+		{engine.SlotStats{Name: "Wi-Fi"}, nics.WiFi},
+		{engine.SlotStats{Name: "Wi-Fi", Phone: true}, nics.Phone},
+		{engine.SlotStats{Name: "Ethernet", Phone: true}, nics.Phone},
+		{engine.SlotStats{Name: "Ethernet"}, nics.Ethernet},
+		{engine.SlotStats{Name: "unknown"}, nics.Unknown},
+	} {
+		if got := rowKind(kinds, c.s); got != c.want {
+			t.Errorf("%+v: %s, want %s", c.s, got, c.want)
+		}
 	}
 }

@@ -3,7 +3,24 @@
 What changed in each release. Each version's section becomes its GitHub release notes, so add the
 entry here before pushing a version tag.
 
-## [Unreleased]
+## [0.4.1] - 2026-11-28
+
+### Fixed
+- **Speed limits and *Cool Down Phone* hold again under load.** A capped link's speed estimate crept
+  back up, so it got a third of the new connections and each of them crawled.
+- **IPv6 that stops working on a busy connection is noticed.** Heavy IPv4 traffic no longer vouches
+  for IPv6 once an IPv6 connection there has timed out too.
+- **An iPhone hotspot that loses its signal mid-download is noticed within seconds**, not minutes.
+- **Game Mode keeps a game on its connection.** A game reaching a new server or player mid-match
+  stays on the connection it plays on, instead of being moved to another one.
+- **Provider names show up even when the tray starts before the internet does.** A failed lookup
+  is tried again after a minute, then less often.
+- **A damaged tray settings file no longer locks the tick boxes.** It reads as the defaults, and the
+  next change sets it aside as `tray-preferences.json.broken` instead of showing an error.
+- **Ticking *Show ISP names* again in the Windows installer turns the names back on.**
+- **An iPhone hotspot joined over Wi-Fi shows the phone icon.**
+- An app that keeps calling a server that is down no longer keeps waking an iPhone hotspot with
+  checks.
 
 ## [0.4.0] - 2026-11-27
 

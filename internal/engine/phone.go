@@ -163,11 +163,32 @@ func (s *Scheduler) applyLimit(sl *Slot) {
 
 // Suspect asks for a fresh probe of a link on which a connection just timed out. A phone is
 // probed rarely, and without this a phone that lost its signal would keep making new
-// connections wait for the connect timeout until its next probe.
+// connections wait for the connect timeout until its next probe. The timeout is also what lets
+// that probe's failure count while the other family keeps the link busy (see SetState).
+//
+// A timeout can also be the far end's fault: an app that keeps calling a dead server would bring
+// a probe forward every probeEveryUp and never let the phone's radio rest. So each such probe that
+// passes doubles the wait before a timeout may bring the next one forward, up to the phone's normal
+// probeEveryPhone; a probe that fails starts over (see suspectResult).
 func (s *Scheduler) Suspect(sl *Slot, f Family) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if sl.state[f] == stateUp && s.now().Sub(sl.lastProbe[f]) >= probeEveryUp {
+	sl.timedOut[f] = s.now()
+	if sl.state[f] == stateUp && s.now().Sub(sl.lastProbe[f]) >= max(probeEveryUp, sl.suspectWait[f]) {
 		sl.suspect[f] = true
+	}
+}
+
+// suspectResult learns from the result of a probe that Suspect brought forward. The caller holds
+// s.mu.
+func (sl *Slot) suspectResult(f Family, up bool) {
+	if !sl.probedSuspect[f] {
+		return
+	}
+	sl.probedSuspect[f] = false
+	if up {
+		sl.suspectWait[f] = min(probeEveryPhone, max(2*probeEveryUp, 2*sl.suspectWait[f]))
+	} else {
+		sl.suspectWait[f] = 0
 	}
 }
