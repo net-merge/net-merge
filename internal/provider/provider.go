@@ -17,24 +17,44 @@ import (
 )
 
 type entry struct {
-	key    string
-	name   string
-	cancel context.CancelFunc
+	key     string
+	name    string
+	cancel  context.CancelFunc
+	failed  bool // the lookup failed; it is tried again at retryAt
+	retryAt time.Time
+	fails   int // failures in a row for this address
 }
 
-// Resolver makes one asynchronous lookup per adapter/address, including failures.
-// Repeated Refresh calls never poll a service. Disable/re-enable explicitly retries.
+// Resolver makes one asynchronous lookup per adapter/address. A name, once found, is not asked for
+// again until the address changes, so repeated Refresh calls never poll a service. A failed lookup
+// is tried again after a minute, then less and less often, up to every 30 minutes: at sign-in the
+// tray can start before the network is up. Disable/re-enable retries at once.
 type Resolver struct {
 	mu      sync.Mutex
 	entries map[string]*entry
 	lookup  func(context.Context, nics.Nic) (string, error)
+	now     func() time.Time
 	ctx     context.Context
 	cancel  context.CancelFunc
 }
 
 func New() *Resolver {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Resolver{entries: map[string]*entry{}, lookup: lookup, ctx: ctx, cancel: cancel}
+	return &Resolver{entries: map[string]*entry{}, lookup: lookup, now: time.Now, ctx: ctx, cancel: cancel}
+}
+
+const (
+	firstRetry = time.Minute
+	maxRetry   = 30 * time.Minute
+)
+
+// retryAfter is the wait before the next lookup after fails failures in a row.
+func retryAfter(fails int) time.Duration {
+	d := firstRetry
+	for i := 1; i < fails && d < maxRetry; i++ {
+		d *= 2
+	}
+	return min(d, maxRetry)
 }
 
 func (r *Resolver) Close() { r.cancel() }
@@ -47,23 +67,33 @@ func (r *Resolver) Refresh(adapters []nics.Nic, enabled bool) {
 		for _, n := range adapters {
 			present[n.Name] = true
 			key := fmt.Sprintf("%d/%s/%s", n.Index, n.IP, n.IP6)
+			fails := 0
 			if e := r.entries[n.Name]; e != nil {
 				if e.key == key {
-					continue
+					if !e.failed || r.now().Before(e.retryAt) {
+						continue // found, still looking, or not time to retry yet
+					}
+					fails = e.fails
 				}
 				e.cancel()
 			}
 			ctx, cancel := context.WithTimeout(r.ctx, 25*time.Second)
-			e := &entry{key: key, cancel: cancel}
+			e := &entry{key: key, cancel: cancel, fails: fails}
 			r.entries[n.Name] = e
 			go func() {
 				defer cancel()
 				name, err := r.lookup(ctx, n)
 				r.mu.Lock()
 				defer r.mu.Unlock()
-				if r.entries[n.Name] == e && ctx.Err() == nil && err == nil {
-					e.name = name
+				if r.entries[n.Name] != e || r.ctx.Err() != nil {
+					return // replaced, removed or closed
 				}
+				if err == nil && ctx.Err() == nil {
+					e.name = name
+					return
+				}
+				e.failed, e.fails = true, e.fails+1
+				e.retryAt = r.now().Add(retryAfter(e.fails))
 			}()
 		}
 	}

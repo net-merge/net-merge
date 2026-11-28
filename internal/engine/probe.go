@@ -90,7 +90,7 @@ func (s *Scheduler) probeDue() []probeJob {
 				// phone that is up is probed rarely, and not at all while traffic arrives over
 				// it: that proves as much as a probe does. A timed-out connection brings the
 				// probe forward (see Suspect).
-				if sl.phone.Load() && !sl.suspect[f] {
+				if sl.phone.Load() && !sl.suspect[f] && !sl.recheck[f] {
 					every = probeEveryPhone
 				}
 			}
@@ -104,7 +104,8 @@ func (s *Scheduler) probeDue() []probeJob {
 			if every == probeEveryPhone && now.Sub(sl.heard[f]) < probeEveryUp {
 				continue
 			}
-			sl.lastProbe[f], sl.suspect[f] = now, false
+			sl.probedSuspect[f] = sl.suspect[f] && !sl.recheck[f]
+			sl.lastProbe[f], sl.suspect[f], sl.recheck[f] = now, false, false
 			sl.probing[f].Store(true)
 			due = append(due, probeJob{sl, f})
 		}

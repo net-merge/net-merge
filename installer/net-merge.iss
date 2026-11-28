@@ -66,6 +66,8 @@ Name: "{autodesktop}\net-merge"; Filename: "{app}\net-merge-tray.exe"; IconFilen
 ; reads the admin account's settings and would never see the choice. The second run is harmless otherwise.
 Filename: "{app}\net-merge.exe"; Parameters: "isp-names off"; Flags: runhidden runasoriginaluser; Check: TurnIspNamesOff
 Filename: "{app}\net-merge.exe"; Parameters: "isp-names off"; Flags: runhidden; Check: TurnIspNamesOff
+Filename: "{app}\net-merge.exe"; Parameters: "isp-names on"; Flags: runhidden runasoriginaluser; Check: TurnIspNamesOn
+Filename: "{app}\net-merge.exe"; Parameters: "isp-names on"; Flags: runhidden; Check: TurnIspNamesOn
 Filename: "{app}\net-merge.exe"; Parameters: "autostart on"; Flags: runhidden; Tasks: autostart; StatusMsg: "Enabling start at sign-in..."
 ; The installer is already elevated, so the tray starts without a second UAC prompt.
 Filename: "{app}\net-merge-tray.exe"; Description: "Start net-merge now"; Flags: nowait postinstall skipifsilent
@@ -77,8 +79,8 @@ Filename: "{app}\net-merge.exe"; Parameters: "autostart off"; Flags: runhidden; 
 Type: filesandordirs; Name: "{localappdata}\net-merge"
 
 [Code]
-// The tick box is applied when it is newly unticked, not on every upgrade: Setup remembers the
-// last choice, and someone may have switched the names back on in the tray since.
+// The tick box is applied when it changes from the last install, not on every upgrade: Setup
+// remembers the last choice, and someone may have switched the names on or off in the tray since.
 var PreviousIspNames: String;
 
 procedure InitializeWizard;
@@ -97,6 +99,11 @@ end;
 function TurnIspNamesOff: Boolean;
 begin
   Result := (not WizardIsTaskSelected('ispnames')) and (PreviousIspNames <> 'off');
+end;
+
+function TurnIspNamesOn: Boolean;
+begin
+  Result := WizardIsTaskSelected('ispnames') and (PreviousIspNames = 'off');
 end;
 
 // Turn net-merge off and make sure no copy is running before files are replaced or removed.

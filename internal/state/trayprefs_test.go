@@ -1,6 +1,7 @@
 package state
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -36,18 +37,27 @@ func TestAliasesAndOptInSurviveReload(t *testing.T) {
 	}
 }
 
-func TestBrokenPreferencesAreNotOverwrittenByAlias(t *testing.T) {
+// A damaged file reads as the defaults (ISP names on), not as everything off. A change made by
+// hand moves it aside, keeping its content, instead of failing on every click.
+func TestDamagedPreferencesAreSetAsideByAChange(t *testing.T) {
 	dir := t.TempDir()
 	path := TrayPreferencesPath(dir)
-	if err := os.WriteFile(path, []byte("broken"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(`{"lookupISP":false,"aliases":{"Eth`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if SetAlias(dir, "Ethernet", "Test") == nil {
-		t.Fatal("silently replaced damaged preferences")
+	p, err := LoadTrayPreferences(dir)
+	if !errors.Is(err, ErrDamagedPreferences) || !p.LookupISP || p.Aliases == nil {
+		t.Fatalf("damaged file read as %+v, %v", p, err)
 	}
-	b, _ := os.ReadFile(path)
-	if string(b) != "broken" {
-		t.Fatal("damaged preferences were overwritten")
+	if err := SetAlias(dir, "Ethernet", "Test"); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(path + ".broken"); string(b) != `{"lookupISP":false,"aliases":{"Eth` {
+		t.Fatalf("the damaged file was not kept: %q", b)
+	}
+	p, err = LoadTrayPreferences(dir)
+	if err != nil || !p.LookupISP || p.Aliases["Ethernet"] != "Test" {
+		t.Fatalf("after the change: %+v, %v", p, err)
 	}
 }
 

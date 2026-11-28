@@ -466,3 +466,49 @@ func TestPhoneFailedProbeWhileBusyIsRepeatedSoon(t *testing.T) {
 		t.Fatalf("phone with no signal left %q", p.state[Fam4])
 	}
 }
+
+// An app that keeps calling a dead server times out again and again. Each probe it brings forward
+// that passes doubles the wait for the next, up to the phone's normal probeEveryPhone; a probe that
+// fails starts over.
+func TestTimeoutsAtTheFarEndBackOff(t *testing.T) {
+	phone := nic("p", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{phone})
+	clock := time.Unix(1000, 0)
+	s.now = func() time.Time { return clock }
+	p := s.slots[0]
+	s.SetState(p, Fam4, true)
+	p.lastProbe[Fam4] = clock
+	due := func() bool {
+		jobs := s.probeDue()
+		for _, j := range jobs {
+			j.sl.probing[j.f].Store(false)
+		}
+		return len(jobs) > 0
+	}
+	for _, wait := range []time.Duration{probeEveryUp, 2 * probeEveryUp, 4 * probeEveryUp, probeEveryPhone, probeEveryPhone} {
+		clock = clock.Add(wait - time.Second)
+		s.Suspect(p, Fam4)
+		if due() {
+			t.Fatalf("a timeout brought the probe forward before %s", wait)
+		}
+		clock = clock.Add(time.Second)
+		s.Suspect(p, Fam4)
+		if !due() {
+			t.Fatalf("a timeout did not bring the probe forward after %s", wait)
+		}
+		s.SetState(p, Fam4, true) // the phone is fine: the server was dead
+	}
+	clock = clock.Add(probeEveryPhone)
+	s.Suspect(p, Fam4)
+	if !due() {
+		t.Fatal("no probe after probeEveryPhone")
+	}
+	s.SetState(p, Fam4, false) // this time the phone really lost its signal
+	s.SetState(p, Fam4, true)  // and got it back
+	clock = clock.Add(probeEveryUp)
+	s.Suspect(p, Fam4)
+	if !due() {
+		t.Fatal("after a failed probe a timeout must bring the probe forward at once again")
+	}
+}

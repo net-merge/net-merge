@@ -25,10 +25,6 @@ func cmdISPNames(args []string) {
 }
 
 func setISPNames(dir string, on bool) error {
-	p, err := state.LoadTrayPreferences(dir)
-	if err != nil {
-		return err // a file we can't read is not overwritten
-	}
-	p.LookupISP = on
-	return state.SaveTrayPreferences(dir, p)
+	_, err := state.UpdateTrayPreferences(dir, func(p *state.TrayPreferences) { p.LookupISP = on })
+	return err
 }

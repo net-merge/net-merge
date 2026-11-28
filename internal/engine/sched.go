@@ -57,9 +57,12 @@ type Slot struct {
 	present         bool
 	state           [2]linkState
 	lastProbe       [2]time.Time
-	heard           [2]time.Time // the last tick that saw data arrive, see probeDue
-	suspect         [2]bool      // a connection timed out: probe now, see Suspect
-	timedOut        [2]time.Time // when a connection in this family last timed out, see SetState
+	heard           [2]time.Time     // the last tick that saw data arrive, see probeDue
+	suspect         [2]bool          // a connection timed out: probe now, see Suspect
+	timedOut        [2]time.Time     // when a connection in this family last timed out, see SetState
+	suspectWait     [2]time.Duration // see Suspect
+	probedSuspect   [2]bool          // the probe in flight was brought forward by Suspect
+	recheck         [2]bool          // a failed probe was set aside as the link was busy: probe again soon
 	heat            time.Duration
 	cooling         bool // held at the cool rate, see cool
 	downUntil       [2]time.Time
@@ -297,6 +300,7 @@ func (s *Scheduler) Update(nics []nics.Nic) {
 			if changed {
 				found.state[f] = stateUnknown
 				found.lastProbe[f], found.downUntil[f] = time.Time{}, time.Time{}
+				found.suspectWait[f] = 0
 				found.peak[f] = 0
 				if s.auto {
 					found.weight[f] = 1
@@ -628,10 +632,13 @@ func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
 	case up:
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
+		sl.suspectResult(f, true)
 	case sl.busyCarrying() && (sl.carrying(f) || s.now().Sub(sl.timedOut[f]) >= timedOutMemory):
-		sl.suspect[f] = true
+		sl.recheck[f] = true
+		sl.probedSuspect[f] = false // says nothing either way
 	default:
 		sl.state[f] = stateDown
+		sl.suspectResult(f, false)
 	}
 }
 

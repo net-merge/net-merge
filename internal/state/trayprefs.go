@@ -23,8 +23,16 @@ func TrayPreferencesPath(dir string) string {
 	return filepath.Join(limitsDir(dir), "tray-preferences.json")
 }
 
+// ErrDamagedPreferences is LoadTrayPreferences' error for a file that can't be decoded. The
+// preferences returned with it are the defaults.
+var ErrDamagedPreferences = errors.New("damaged tray preferences")
+
+func defaultTrayPreferences() TrayPreferences {
+	return TrayPreferences{LookupISP: true, Aliases: map[string]string{}} // ISP names are on until unticked
+}
+
 func LoadTrayPreferences(dir string) (TrayPreferences, error) {
-	p := TrayPreferences{LookupISP: true, Aliases: map[string]string{}} // ISP names are on until unticked
+	p := defaultTrayPreferences()
 	f, err := os.Open(TrayPreferencesPath(dir))
 	if errors.Is(err, os.ErrNotExist) {
 		return p, nil
@@ -34,7 +42,7 @@ func LoadTrayPreferences(dir string) (TrayPreferences, error) {
 	}
 	defer f.Close()
 	if err := json.NewDecoder(io.LimitReader(f, 64<<10)).Decode(&p); err != nil {
-		return TrayPreferences{Aliases: map[string]string{}}, err
+		return defaultTrayPreferences(), fmt.Errorf("%w %s: %v", ErrDamagedPreferences, TrayPreferencesPath(dir), err)
 	}
 	if p.Aliases == nil {
 		p.Aliases = map[string]string{}
@@ -112,18 +120,33 @@ func AdapterLabel(name string, aliases map[string]string) string {
 	return name
 }
 
+// UpdateTrayPreferences applies change to the saved preferences and saves them. A file that can't
+// be decoded is first moved to tray-preferences.json.broken, so nothing in it is lost, and the change
+// is applied to the defaults: otherwise one damaged file would leave every tick box and alias stuck,
+// each click only showing an error. A file that can't be read at all is left alone.
+func UpdateTrayPreferences(dir string, change func(*TrayPreferences)) (TrayPreferences, error) {
+	p, err := LoadTrayPreferences(dir)
+	if errors.Is(err, ErrDamagedPreferences) {
+		path := TrayPreferencesPath(dir)
+		err = replaceFile(path, path+".broken")
+	}
+	if err != nil {
+		return p, err
+	}
+	change(&p)
+	return p, SaveTrayPreferences(dir, p)
+}
+
 func SetAlias(dir, name, alias string) error {
 	if err := ValidateAlias(name, alias); err != nil {
 		return err
 	}
-	p, err := LoadTrayPreferences(dir)
-	if err != nil {
-		return err // never replace a damaged preferences file with an empty one
-	}
-	if alias == "" {
-		delete(p.Aliases, name)
-	} else {
-		p.Aliases[name] = alias
-	}
-	return SaveTrayPreferences(dir, p)
+	_, err := UpdateTrayPreferences(dir, func(p *TrayPreferences) {
+		if alias == "" {
+			delete(p.Aliases, name)
+		} else {
+			p.Aliases[name] = alias
+		}
+	})
+	return err
 }
