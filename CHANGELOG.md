@@ -3,6 +3,12 @@
 What changed in each release. Each version's section becomes its GitHub release notes, so add the
 entry here before pushing a version tag.
 
+## [Unreleased]
+
+### Fixed
+- **A download no longer stops after a minute** when the app has finished sending its request and
+  closed its side of the connection, as `nc` and some download tools do.
+
 ## [0.4.1] - 2026-11-28
 
 ### Fixed
