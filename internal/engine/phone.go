@@ -163,10 +163,12 @@ func (s *Scheduler) applyLimit(sl *Slot) {
 
 // Suspect asks for a fresh probe of a link on which a connection just timed out. A phone is
 // probed rarely, and without this a phone that lost its signal would keep making new
-// connections wait for the connect timeout until its next probe.
+// connections wait for the connect timeout until its next probe. The timeout is also what lets
+// that probe's failure count while the other family keeps the link busy (see SetState).
 func (s *Scheduler) Suspect(sl *Slot, f Family) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	sl.timedOut[f] = s.now()
 	if sl.state[f] == stateUp && s.now().Sub(sl.lastProbe[f]) >= probeEveryUp {
 		sl.suspect[f] = true
 	}

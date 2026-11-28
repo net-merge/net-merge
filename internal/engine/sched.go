@@ -59,6 +59,7 @@ type Slot struct {
 	lastProbe       [2]time.Time
 	heard           [2]time.Time // the last tick that saw data arrive, see probeDue
 	suspect         [2]bool      // a connection timed out: probe now, see Suspect
+	timedOut        [2]time.Time // when a connection in this family last timed out, see SetState
 	heat            time.Duration
 	cooling         bool // held at the cool rate, see cool
 	downUntil       [2]time.Time
@@ -353,17 +354,21 @@ func (s *Scheduler) Tick(dt time.Duration) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
+	for _, app := range s.apps {
+		app.playing = nil
+	}
 	for _, sl := range s.slots {
-		active := false
+		sl.gameActive = false
 		for _, f := range []Family{Fam4, Fam6} {
 			for u := range sl.udpFlows[f] {
 				if u.isGameLike(now) {
-					active = true
-					break
+					sl.gameActive = true
+					if app := s.apps[u.appPort]; app != nil {
+						app.playing = sl
+					}
 				}
 			}
 		}
-		sl.gameActive = active
 	}
 	sec := dt.Seconds()
 	for i, sl := range slots {
@@ -429,6 +434,7 @@ func (s *Scheduler) Tick(dt time.Duration) {
 			} else {
 				idle[sl] = true
 			}
+			sl.capPeak(f)
 			if !sl.present || sl.ip(f) == nil {
 				continue
 			}
@@ -440,6 +446,7 @@ func (s *Scheduler) Tick(dt time.Duration) {
 		for sl := range idle {
 			if sl.present && sl.ip(f) != nil && sl.peak[f] > 0 {
 				sl.peak[f] = math.Min(sl.peak[f]*1.03, math.Max(sl.peak[f], 0.5*maxPeak))
+				sl.capPeak(f)
 			}
 		}
 		for _, sl := range s.slots {
@@ -470,12 +477,36 @@ func (s *Scheduler) Tick(dt time.Duration) {
 	}
 }
 
+// capPeak keeps a capped link's estimate at its cap, and a cooling phone's at the cool rate (cool
+// installs it as the cap). The link can't carry more, yet its estimate would creep up: its low
+// weight gives it fewer busy flows than the others, so its falling samples are set aside (see
+// fairShare), and each one set aside lets the idle recovery raise the estimate by 3%, until the
+// capped link got a third of the new flows and each of them crawled. The caller holds s.mu.
+func (sl *Slot) capPeak(f Family) {
+	if lim := sl.limitMbps(); lim > 0 {
+		sl.peak[f] = math.Min(sl.peak[f], lim*bytesPerMbit)
+	}
+}
+
 // Acquire picks an IPv4 NIC for a new flow, skipping the ones in skip. The caller must Release it.
 func (s *Scheduler) Acquire(skip map[string]struct{}) *Slot { return s.AcquireFor(Fam4, skip) }
 func (s *Scheduler) Release(sl *Slot)                       { s.ReleaseFor(sl, Fam4) }
 
 // AcquireFor picks a NIC that has an address of the given family.
 func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
+	return s.acquire(f, skip, 0)
+}
+
+// AcquireUDP is AcquireFor for a new UDP socket of the application whose own port is appPort.
+// In Game Mode, while that application plays a game or call on one link, its new sockets stay on
+// that link: they are the same game reaching a new peer, relay or voice server, which would
+// otherwise go out through another link with another public address and latency.
+func (s *Scheduler) AcquireUDP(f Family, skip map[string]struct{}, appPort uint16) *Slot {
+	return s.acquire(f, skip, appPort)
+}
+
+// acquire picks a NIC for a new flow. appPort is the UDP application's port, or 0.
+func (s *Scheduler) acquire(f Family, skip map[string]struct{}, appPort uint16) *Slot {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := s.now()
@@ -509,25 +540,32 @@ func (s *Scheduler) AcquireFor(f Family, skip map[string]struct{}) *Slot {
 	if len(pool) == 0 {
 		return nil
 	}
-	if s.gameMode { // keep new flows off a link with a game or call, if another can take them
-		if free := slices.DeleteFunc(slices.Clone(pool), func(sl *Slot) bool { return sl.gameActive }); len(free) > 0 {
-			pool = free
+	var best *Slot
+	if s.gameMode && appPort != 0 {
+		if app := s.apps[appPort]; app != nil && slices.Contains(pool, app.playing) {
+			best = app.playing // the game's own new socket: stay with the game
 		}
 	}
-	pool = s.standby(pool, f)
-	// Random start so ties don't resonate with the arrival pattern (a rotating counter can
-	// lock onto e.g. "every third flow is a short DNS-like one" and starve an adapter).
-	start := rand.IntN(len(pool))
-	var best *Slot
-	bestScore := math.Inf(1)
-	for i := range pool {
-		sl := pool[(start+i)%len(pool)]
-		load := sl.actF[f].Load()
-		if s.auto {
-			load = sl.busy(f)
+	if best == nil {
+		if s.gameMode { // keep new flows off a link with a game or call, if another can take them
+			if free := slices.DeleteFunc(slices.Clone(pool), func(sl *Slot) bool { return sl.gameActive }); len(free) > 0 {
+				pool = free
+			}
 		}
-		if score := float64(load+1) / sl.weight[f]; score < bestScore {
-			best, bestScore = sl, score
+		pool = s.standby(pool, f)
+		// Random start so ties don't resonate with the arrival pattern (a rotating counter can
+		// lock onto e.g. "every third flow is a short DNS-like one" and starve an adapter).
+		start := rand.IntN(len(pool))
+		bestScore := math.Inf(1)
+		for i := range pool {
+			sl := pool[(start+i)%len(pool)]
+			load := sl.actF[f].Load()
+			if s.auto {
+				load = sl.busy(f)
+			}
+			if score := float64(load+1) / sl.weight[f]; score < bestScore {
+				best, bestScore = sl, score
+			}
 		}
 	}
 	best.active.Add(1)
@@ -576,17 +614,30 @@ func (s *Scheduler) ReleaseFor(sl *Slot, f Family) {
 }
 
 // SetState records a probe result. A passing probe also clears any link-error cooldown. A failed
-// one is ignored while the link is busy: a full link answers too late to pass the probe.
+// one is set aside while the link is busy, as a full link answers too late to pass the probe, and
+// the link is probed again soon (a phone's next probe would otherwise be minutes away).
+//
+// Data in the probed family proves that family works. Data in the other family only shows that
+// the link is full, so it vouches for this family only until a real connection in it times out
+// as well: IPv6 can stop routing while IPv4 is busy, and every new IPv6 flow sent there would
+// wait for the connect timeout.
 func (s *Scheduler) SetState(sl *Slot, f Family, up bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if up {
+	switch {
+	case up:
 		sl.state[f] = stateUp
 		sl.downUntil[f] = time.Time{}
-	} else if !sl.busyCarrying() {
+	case sl.busyCarrying() && (sl.carrying(f) || s.now().Sub(sl.timedOut[f]) >= timedOutMemory):
+		sl.suspect[f] = true
+	default:
 		sl.state[f] = stateDown
 	}
 }
+
+// timedOutMemory is how long a timed-out connection counts against its family's next probe: long
+// enough to reach it, as Suspect brings that probe within probeEveryUp.
+const timedOutMemory = 2 * probeEveryUp
 
 // busyCarrying reports whether net-merge is moving real data over the link: receiving it, or
 // sending it while the acknowledgements come back (about 1% or more, from the OS's counters).
@@ -596,6 +647,12 @@ func (sl *Slot) busyCarrying() bool {
 	in := sl.rateIn[Fam4] + sl.rateIn[Fam6]
 	out := sl.rateOut[Fam4] + sl.rateOut[Fam6]
 	return in >= minMeasuredPeak || out >= minMeasuredPeak && sl.linkRateIn >= out/100
+}
+
+// carrying is busyCarrying for one address family. The OS's counters behind the acknowledgement
+// check don't tell the families apart. The caller holds Scheduler.mu.
+func (sl *Slot) carrying(f Family) bool {
+	return sl.rateIn[f] >= minMeasuredPeak || sl.rateOut[f] >= minMeasuredPeak && sl.linkRateIn >= sl.rateOut[f]/100
 }
 
 // Fail sidelines a NIC whose link itself is broken (for one address family).

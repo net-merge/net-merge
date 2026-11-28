@@ -81,7 +81,8 @@ type udpFlowActivity struct {
 
 // appPeers is who one application port talks to, over the current and the last peerWindow.
 type appPeers struct {
-	sockets int // guarded by Scheduler.mu
+	sockets int   // guarded by Scheduler.mu
+	playing *Slot // the link its game or call is on, as of the last Tick; guarded by Scheduler.mu
 
 	mu    sync.Mutex
 	peers map[netip.AddrPort]struct{}
@@ -208,7 +209,7 @@ func (b *Balancer) ListenUDP(ctx context.Context, f Family, appPort uint16) (net
 	tried := map[string]struct{}{}
 	lastErr := errors.New("no usable network adapter")
 	for {
-		sl := b.S.AcquireFor(f, tried)
+		sl := b.S.AcquireUDP(f, tried, appPort)
 		if sl == nil {
 			return nil, lastErr
 		}

@@ -5,6 +5,15 @@ entry here before pushing a version tag.
 
 ## [Unreleased]
 
+### Fixed
+- **Speed limits and *Cool Down Phone* hold again under load.** A capped link's speed estimate crept
+  back up, so it got a third of the new connections and each of them crawled.
+- **IPv6 that stops working on a busy connection is noticed.** Heavy IPv4 traffic no longer vouches
+  for IPv6 once an IPv6 connection there has timed out too.
+- **An iPhone hotspot that loses its signal mid-download is noticed within seconds**, not minutes.
+- **Game Mode keeps a game on its connection.** A game reaching a new server or player mid-match
+  stays on the connection it plays on, instead of being moved to another one.
+
 ## [0.4.0] - 2026-11-27
 
 ### Added

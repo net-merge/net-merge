@@ -402,3 +402,67 @@ func TestPhoneProbeNotSkippedForOldData(t *testing.T) {
 		t.Fatal("the due probe was skipped because of data from two minutes ago")
 	}
 }
+
+// A phone that loses its signal mid-transfer is probed once its data stops, not a full
+// probeEveryPhone after the last probe it skipped while busy.
+func TestPhoneIsProbedSoonAfterItsDataStops(t *testing.T) {
+	phone := nic("p", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{phone})
+	clock := time.Unix(1000, 0)
+	s.now = func() time.Time { return clock }
+	p := s.slots[0]
+	s.SetState(p, Fam4, true)
+	p.lastProbe[Fam4] = clock
+	due := func() bool {
+		jobs := s.probeDue()
+		for _, j := range jobs {
+			j.sl.probing[j.f].Store(false)
+		}
+		return len(jobs) > 0
+	}
+	for range 180 { // three minutes of streaming
+		clock = clock.Add(time.Second)
+		p.bytesIn[Fam4].Add(1_000_000)
+		s.Tick(time.Second)
+		if due() {
+			t.Fatal("a phone that is carrying traffic must not be probed")
+		}
+	}
+	clock = clock.Add(probeEveryUp + time.Second) // the signal is gone: nothing arrives
+	if !due() {
+		t.Fatalf("phone not probed %s after its data stopped", probeEveryUp+time.Second)
+	}
+	clock = clock.Add(probeEveryUp)
+	if due() {
+		t.Fatal("an idle phone that was just probed must not be probed again before probeEveryPhone")
+	}
+}
+
+// A failed probe set aside because the phone was busy is repeated soon, not probeEveryPhone later.
+func TestPhoneFailedProbeWhileBusyIsRepeatedSoon(t *testing.T) {
+	phone := nic("p", "172.20.10.2", 1)
+	phone.Phone = true
+	s := NewScheduler([]nics.Nic{phone})
+	clock := time.Unix(1000, 0)
+	s.now = func() time.Time { return clock }
+	p := s.slots[0]
+	s.SetState(p, Fam4, true)
+	p.lastProbe[Fam4] = clock
+	p.bytesIn[Fam4].Add(1_000_000)
+	s.Tick(time.Second) // the last tick was busy, then the signal went
+	s.SetState(p, Fam4, false)
+	if p.state[Fam4] != stateUp {
+		t.Fatalf("busy phone marked %q", p.state[Fam4])
+	}
+	clock = clock.Add(probeEveryUp)
+	jobs := s.probeDue()
+	if len(jobs) == 0 {
+		t.Fatal("the failed probe was not repeated within probeEveryUp")
+	}
+	s.Tick(time.Second)
+	s.SetState(p, Fam4, false) // no data any more: now it counts
+	if p.state[Fam4] != stateDown {
+		t.Fatalf("phone with no signal left %q", p.state[Fam4])
+	}
+}
