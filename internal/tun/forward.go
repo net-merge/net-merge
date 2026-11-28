@@ -1,6 +1,7 @@
 package tun
 
 import (
+	"net"
 	"time"
 
 	"gvisor.dev/gvisor/pkg/tcpip"
@@ -86,4 +87,26 @@ func setTCPOptions(s *stack.Stack, ep tcpip.Endpoint) {
 	if err := s.TransportProtocolOption(header.TCPProtocolNumber, &rs); err == nil {
 		ep.SocketOptions().SetReceiveBufferSize(int64(rs.Default), false)
 	}
+}
+
+// keepReading keeps a download going after the app has finished sending. Once one direction ends,
+// tun2socks gives the other 60 s through SetReadDeadline (its half-close timeout), so an app that sent
+// its request and half-closed, as nc and some download tools do, lost the download a minute later.
+// The server still ends the connection as usual.
+type keepReading struct{ net.Conn }
+
+func (keepReading) SetReadDeadline(time.Time) error { return nil }
+
+func (c keepReading) CloseRead() error {
+	if cr, ok := c.Conn.(interface{ CloseRead() error }); ok {
+		return cr.CloseRead()
+	}
+	return nil
+}
+
+func (c keepReading) CloseWrite() error {
+	if cw, ok := c.Conn.(interface{ CloseWrite() error }); ok {
+		return cw.CloseWrite()
+	}
+	return nil
 }

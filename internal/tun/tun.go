@@ -122,7 +122,11 @@ var (
 type tunProxy struct{ b *engine.Balancer }
 
 func (p tunProxy) DialContext(ctx context.Context, m *M.Metadata) (net.Conn, error) {
-	return p.b.DialPinned(ctx, m.DstIP.Unmap().String(), int(m.DstPort))
+	conn, err := p.b.DialPinned(ctx, m.DstIP.Unmap().String(), int(m.DstPort))
+	if err != nil {
+		return nil, err
+	}
+	return keepReading{conn}, nil
 }
 
 func (p tunProxy) DialUDP(m *M.Metadata) (net.PacketConn, error) {
