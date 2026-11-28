@@ -3,7 +3,7 @@
 What changed in each release. Each version's section becomes its GitHub release notes, so add the
 entry here before pushing a version tag.
 
-## [Unreleased]
+## [0.4.2] - 2026-11-28
 
 ### Fixed
 - **A download no longer stops after a minute** when the app has finished sending its request and

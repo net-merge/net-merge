@@ -603,7 +603,7 @@ net-merge is free. If it saves you time, you can [buy me a coffee](https://buyme
 Free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by
 [SignPath Foundation](https://signpath.org/).
 
-Signing is being set up: releases up to v0.4.1 are not signed.
+Signing is being set up: releases up to v0.4.2 are not signed.
 
 - Committers and reviewers: [@rohit267](https://github.com/rohit267)
 - Approvers: [@rohit267](https://github.com/rohit267)
