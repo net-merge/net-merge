@@ -94,6 +94,8 @@ irm https://raw.githubusercontent.com/net-merge/net-merge/main/install.ps1 | iex
 Antivirus blocked it? Download [net-merge-setup.exe](https://github.com/net-merge/net-merge/releases/latest/download/net-merge-setup.exe)
 and double-click it instead.
 
+Chinese users can also download net-merge from [FossNest](https://fossnest.org/zh-CN/repo/net-merge/net-merge), which provides a Chinese introduction and download mirrors.
+
 That's it: net-merge is installed and its icon appears in the menu bar or tray. On Linux the script
 uses your package manager (apt, dnf, zypper, apk or pacman) and on macOS Homebrew when you have it, so
 net-merge updates with the rest of your system. To start it at sign-in, tick *Start at Sign-In* in its menu.
